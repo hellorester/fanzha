@@ -41,7 +41,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start.ps1
 
 ## 已做的检查
 
-9个规则单元测试方法、354项接口请求或断言、四角色29个页面入口、主线真实表单操作、10万条虚构数据及20个独立账号的容量检查、数据库和附件恢复、本机启停均已通过。本机结果保存在 `tests/results`，运行记录不上传Git仓库。综合测试会生成业务数据，部分脚本引用本轮案例ID，不作为每次启动步骤。
+本轮修复覆盖任务材料权限、止付更正边界、同步超时、宣防截止时间、重复派发、URL匹配、规则溢出、附件清理和旧数据升级。前端附件生命周期测试、后端单元测试以及独立 MySQL 验证库的主线、并发、边界和迁移测试均有相应脚本。
+
+`.github/workflows/ci.yml` 在向 `main` 推送和提交 PR 时执行前端测试及构建、后端测试及完整打包、MySQL 实际接口回归和旧数据迁移检查，测试报告保留7天。CI仅使用临时数据库与自动生成的密钥，不读取任何开发者的本机配置。
+
+本机前端测试可在 `frontend` 中执行 `npm test`；`Build.ps1` 默认包含后端单元测试。接口测试通过 `TEST_BASE_URL` 指定测试实例；SQL边界测试还需 `TEST_DB_NAME`、数据库连接及 `APP_KEY`，仅允许独立的 `antifraud_*verify` 或 `antifraud_*ci` 验证库。综合测试会生成业务数据，不应对日常业务库执行。
+
+此前还完成过四角色29个页面入口、10万条虚构数据及20个独立账号的容量检查、数据库及附件恢复和本机启停验证。这些历史容量结果不代表每次改动都重新跑过压力测试。本机结果保存在 `tests/results`，运行记录不上传Git仓库。
 
 工具路径和本机配置另通过27项脚本检查，并在不含数据库配置的全新目录完成构建；备份、独立库恢复及自定义端口启停已实测。可运行 `powershell -NoProfile -ExecutionPolicy Bypass -File tests/portable_scripts.ps1` 重做脚本检查，该检查使用临时目录，不连接业务数据库。
 
@@ -80,6 +86,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Configure.ps1 -Datab
 
 `javaHome` 指向JDK根目录，`nodeHome` 指向含node.exe和npm.cmd的目录，`mysqlBin` 指向含mysql.exe和mysqldump.exe的目录。路径支持空格，JSON建议使用正斜杠。`mavenUserHome` 控制Wrapper缓存，并默认使用其repository子目录保存Maven依赖；`mavenRepository`可单独覆盖依赖目录。未设置时沿用当前电脑的环境变量与默认缓存。
 
-`.local`已被Git忽略，自己的工具路径和数据库配置不会提交或覆盖队友配置。密码及应用密钥使用当前Windows用户的DPAPI保存，请各自初始化，不复制他人的 `.local`。修改数据库结构时仍须随代码提交升级SQL并在各自数据库执行。
+`.local`已被Git忽略，自己的工具路径和数据库配置不会提交或覆盖队友配置。密码及应用密钥使用当前Windows用户的DPAPI保存，请各自初始化，不复制他人的 `.local`。
+
+数据库升级由 `Migrations.java` 按版本执行，成功版本记录在 `af_migration` 中。启动完成升级与基础资料初始化后才开放接口。本轮会保留既有业务记录，将号码、账户及URL的索引升级为由现有应用密钥派生的 HMAC 指纹，同时规范化旧URL。升级前应运行 `scripts/Backup.ps1`；恢复时必须同时恢复数据和原应用密钥。
+
+网格员可查看本社区待领取任务摘要及本人负责的任务；领取后才能查看居民和材料。回执更正目前支持止付，返还和解除保留原业务流程。宣传活动实际发生时间须在任务创建与截止时间之间，按时完成的活动允许事后登记。未关联材料可由上传人移除，每个账号或匿名会话最多暂存20份、合计50MB，超过24小时的未关联材料由后台清理；已提交材料不参与此清理。
 
 仓库不含 `.local`、数据库口令、业务密钥、上传文件、备份、依赖目录、构建产物和本机测试输出。复制源代码不会带走现有业务数据。

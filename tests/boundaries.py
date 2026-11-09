@@ -1,9 +1,9 @@
 """Controlled SQL fixtures and failure injection are restricted to the verification database."""
 import integration as I
 from integration import *
-from recovery_capacity import sql,VERIFY,quoted,encryption
+from test_db import sql,VERIFY,quoted,encryption,fingerprint
 from concurrent.futures import ThreadPoolExecutor
-I.BASE='http://127.0.0.1:8089/api'
+I.BASE=os.environ.get('TEST_BASE_URL','http://127.0.0.1:8089/api')
 def run():
  assert sql('SELECT DATABASE()')==VERIFY
  center,center2,pay=map(Client,['center','center','pay1']);tag='BND'+uuid.uuid4().hex[:10]
@@ -12,7 +12,7 @@ def run():
  base=datetime.datetime.now().replace(microsecond=0)-datetime.timedelta(days=10)
  def fixture(at,person=victim):
   code=tag+uuid.uuid4().hex[:9]
-  return int(sql(f"INSERT INTO af_report(code,request_key,owner_id,victim_id,anonymous,kind,value_hash,value_enc,payload_enc,source,created_at) VALUES('{code}','{code}',1,{person if person else 'NULL'},FALSE,'账户',SHA2('6222000000000001',256),{quoted(val)},{quoted(payload)},'模拟监测','{at.isoformat(' ')}'); SELECT LAST_INSERT_ID();"))
+  return int(sql(f"INSERT INTO af_report(code,request_key,owner_id,victim_id,anonymous,kind,value_hash,value_enc,payload_enc,source,created_at) VALUES('{code}','{code}',1,{person if person else 'NULL'},FALSE,'账户','{fingerprint('账户','6222000000000001')}',{quoted(val)},{quoted(payload)},'模拟监测','{at.isoformat(' ')}'); SELECT LAST_INSERT_ID();"))
  def process(r):center.call(f'/reports/{r}/retry',{});return center.call('/reports/'+str(r))['alert_id']
  r1=fixture(base);a=process(r1);r2=fixture(base+datetime.timedelta(hours=24));require(process(r2)==a,'归并恰好24小时属于固定时间窗')
  r3=fixture(base+datetime.timedelta(hours=24,seconds=1));a3=process(r3);require(a3!=a,'归并超过24小时一秒创建新预警')

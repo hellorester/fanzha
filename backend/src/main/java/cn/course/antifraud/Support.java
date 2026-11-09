@@ -19,6 +19,14 @@ public class Support {
     public final JdbcTemplate db;
     public final JsonMapper json;
     private final byte[] key;
+    public String fingerprint(String kind,String normalized){
+        try{
+            Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(key,"HmacSHA256"));
+            byte[] derived=mac.doFinal("antifraud/fingerprint-key/v1".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            mac.init(new SecretKeySpec(derived,"HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal((kind+"\0"+normalized).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        }catch(GeneralSecurityException e){throw new IllegalStateException("线索指纹生成失败",e);}
+    }
     public Support(JdbcTemplate db,JsonMapper json,@Value("${app.key}") String key){this.db=db;this.json=json;this.key=Base64.getDecoder().decode(key);if(this.key.length!=32)throw new IllegalStateException("APP_KEY需要32字节");}
     public LocalDateTime now(){return LocalDateTime.now(ZoneId.of("Asia/Shanghai")).withNano(0);}
     public static void require(boolean condition,String message){if(!condition)throw new Problem(400,message);}

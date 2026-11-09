@@ -10,6 +10,11 @@ import static org.mockito.Mockito.*;
 import static cn.course.antifraud.Support.*;
 
 class AuthTest {
+    @Test void requestsWaitForMigrationsAndSeedToComplete(){
+        Auth auth=new Auth(mock(Support.class));var request=new MockHttpServletRequest("GET","/api/session");var response=new org.springframework.mock.web.MockHttpServletResponse();
+        assertEquals(503,assertThrows(Problem.class,()->auth.preHandle(request,response,new Object())).status);
+        auth.ready();assertTrue(auth.preHandle(request,response,new Object()));
+    }
     private static final String PASSWORD_HASH=password("LoginTest2026!");
     private Auth authFor(String role){
         Support support=mock(Support.class);

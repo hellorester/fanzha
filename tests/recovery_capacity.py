@@ -3,6 +3,7 @@ import os,subprocess,hashlib,base64,statistics,threading,platform
 from concurrent.futures import ThreadPoolExecutor
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import integration as I
+from test_db import fingerprint
 from integration import Client,require,results
 import json,time,datetime,pathlib,uuid
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -39,7 +40,7 @@ def run():
  sql('SET SESSION cte_max_recursion_depth=110000;'+
   'INSERT INTO af_user(username,password_hash,display_name,role,enabled) '+cte(500)+f"SELECT CONCAT('{prefix}u',n),(SELECT password_hash FROM af_user WHERE username='center'),CONCAT('容量验收用户',n),'CENTER',TRUE FROM seq;"+
   'INSERT INTO af_alert(code,victim_id,community_id,state,level,score,root_time,updated_at) '+cte(1000)+f"SELECT CONCAT('{prefix}a',n),1,1,IF(n<=400,'已闭环',IF(n<=600,'处置中','待研判')),ELT(1+MOD(n,3),'高','中','低'),MOD(n,101),DATE_SUB(NOW(),INTERVAL (1+MOD(n,20)) DAY),NOW() FROM seq;"+
-  'INSERT INTO af_report(code,request_key,owner_id,victim_id,anonymous,kind,value_hash,value_enc,payload_enc,source,alert_id,processing,created_at) '+cte(100000)+f"SELECT CONCAT('{prefix}r',n),CONCAT('{prefix}r',n),2,1,FALSE,'号码',SHA2('13800000009',256),{quoted(encrypted_value)},{quoted(encrypted_payload)},'模拟监测',a.id,'已研判',a.root_time FROM seq JOIN af_alert a ON a.code=CONCAT('{prefix}a',1+MOD(n,1000));"+
+  'INSERT INTO af_report(code,request_key,owner_id,victim_id,anonymous,kind,value_hash,value_enc,payload_enc,source,alert_id,processing,created_at) '+cte(100000)+f"SELECT CONCAT('{prefix}r',n),CONCAT('{prefix}r',n),2,1,FALSE,'号码','{fingerprint('号码','13800000009')}',{quoted(encrypted_value)},{quoted(encrypted_payload)},'模拟监测',a.id,'已研判',a.root_time FROM seq JOIN af_alert a ON a.code=CONCAT('{prefix}a',1+MOD(n,1000));"+
   'INSERT INTO af_command(code,kind,alert_id,bank_id,org_id,victim_id,state,requested,actual,remaining,created_at,accepted_at,expires_at) '+cte(600)+f"SELECT CONCAT('{prefix}c',n),'止付',a.id,1,1,1,IF(n<=400,'已解除','拒绝执行'),100,IF(n<=400,100,0),0,a.root_time,a.root_time,IF(n<=400,DATE_ADD(a.root_time,INTERVAL 48 HOUR),NULL) FROM seq JOIN af_alert a ON a.code=CONCAT('{prefix}a',n);"+
   f"INSERT INTO af_receipt(command_id,version,result,amount,reason,voucher,actor_id,created_at) SELECT id,1,IF(actual=0,'拒绝执行','全额执行'),actual,'容量验收虚拟回执',CONCAT('CAP-',id),3,created_at FROM af_command WHERE code LIKE '{prefix}c%';"+
   f"INSERT INTO af_ledger(command_id,action,amount,available_after,note,created_at) SELECT id,'容量模拟冻结',actual,60000-actual,'容量验收历史样例',created_at FROM af_command WHERE code LIKE '{prefix}c%';"+
@@ -48,7 +49,7 @@ def run():
   'INSERT INTO af_log(actor_id,actor_role,action,entity_type,entity_id,note,created_at) '+cte(5000)+f"SELECT 1,'CENTER','容量测试','capacity',n,'{prefix}',NOW() FROM seq;")
  entries=[]
  for n in range(1000):
-  value='139'+str(10000000+n);entries.append(f"('号码',SHA2('{value}',256),{quoted(encryption(value))},'{prefix}',TRUE)")
+  value='139'+str(10000000+n);entries.append(f"('号码','{fingerprint('号码',value)}',{quoted(encryption(value))},'{prefix}',TRUE)")
  sql('INSERT INTO af_blacklist(kind,value_hash,value_enc,source,enabled) VALUES '+','.join(entries)+';')
  dataset=counts(VERIFY);clients=[Client(prefix+'u'+str(n)) for n in range(1,21)]
  for c in clients[:3]:c.call('/list/reports?page=1');c.call('/stats')

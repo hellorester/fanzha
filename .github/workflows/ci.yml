@@ -1,0 +1,103 @@
+name: Prototype checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: prototype-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    name: Build and regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-only
+          MYSQL_DATABASE: antifraud_ci
+          MYSQL_USER: antifraud_ci
+          MYSQL_PASSWORD: ci-database-only
+          TZ: Asia/Shanghai
+        ports: [3306:3306]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      TZ: Asia/Shanghai
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: antifraud_ci
+      TEST_DB_NAME: antifraud_ci
+      DB_USER: antifraud_ci
+      DB_PASSWORD: ci-database-only
+      APP_PORT: '8089'
+      TEST_BASE_URL: http://127.0.0.1:8089/api
+      APP_STORAGE: ${{ github.workspace }}/.local/ci-uploads
+      APP_LOG: ${{ github.workspace }}/.local/ci-application.log
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Frontend tests and production build
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+      - name: Backend tests and full application package
+        run: |
+          mkdir -p backend/src/main/resources/static
+          cp -R frontend/dist/. backend/src/main/resources/static/
+          mvn -B -f backend/pom.xml verify
+      - name: Prepare disposable test environment
+        run: |
+          python -m pip install -r tests/requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y default-mysql-client
+          mkdir -p .local tests/results
+          python -c "import os,base64; print('APP_KEY='+base64.b64encode(os.urandom(32)).decode())" >> "$GITHUB_ENV"
+      - name: HTTP workflows and SQL boundary regressions
+        run: |
+          java -jar backend/target/antifraud-1.0.0.jar --app.attachments.cleanup-initial-delay=1000 --app.attachments.cleanup-delay=2000 > .local/ci-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          python tests/wait_for_server.py
+          python tests/integration.py
+          python tests/advanced.py
+          python tests/boundaries.py
+          python tests/review_regressions.py
+          python tests/migration_regression.py prepare
+          kill "$server_pid"
+          wait "$server_pid" || true
+          java -jar backend/target/antifraud-1.0.0.jar > .local/ci-migration.log 2>&1 &
+          server_pid=$!
+          python tests/wait_for_server.py
+          python tests/migration_regression.py verify
+      - name: Preserve test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-test-results
+          path: |
+            backend/target/surefire-reports/
+            tests/results/*.json
+            .local/ci-*.log
+          retention-days: 7

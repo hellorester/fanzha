@@ -1,10 +1,12 @@
 <script setup>
 import {computed,reactive,ref,onMounted,onBeforeUnmount,useId} from 'vue'
 import {api} from '../api'
+import {createAttachmentDraft} from '../attachment-draft'
 import AppIcon from './AppIcon.vue'
 const props=defineProps({title:String,description:String,fields:Array,initial:Object,submit:Function,button:{default:'确认提交'}})
 const emit=defineEmits(['close','done'])
 const data=reactive({...props.initial}),error=ref(''),busy=ref(false),uploads=reactive({}),dialog=ref(null),formId=useId()
+const draft=createAttachmentDraft(api)
 props.fields.forEach(f=>{if(data[f.key]===undefined)data[f.key]=f.default??(f.type==='checkbox'?false:f.type==='file'?[]:'')})
 const groups=computed(()=>{
  const result=[]
@@ -20,9 +22,10 @@ const groups=computed(()=>{
 })
 let previous
 onMounted(()=>{previous=document.activeElement;document.body.classList.add('modal-open');dialog.value?.querySelector('input:not([type="file"]),select,textarea')?.focus({preventScroll:true})})
-onBeforeUnmount(()=>{document.body.classList.remove('modal-open');previous?.focus?.({preventScroll:true})})
+onBeforeUnmount(()=>{void draft.close();document.body.classList.remove('modal-open');previous?.focus?.({preventScroll:true})})
+async function close(){if(busy.value)return;busy.value=true;await draft.close();emit('close')}
 function keydown(e){
- if(e.key==='Escape'&&!busy.value)emit('close')
+ if(e.key==='Escape')void close()
  if(e.key==='Tab'){
   const nodes=[...dialog.value.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]')].filter(n=>n.getClientRects().length)
   if(e.shiftKey&&document.activeElement===nodes[0]){e.preventDefault();nodes.at(-1)?.focus()}
@@ -37,26 +40,31 @@ async function upload(e,field){
   for(const file of selected){
    if(file.size>10*1024*1024)throw Error(file.name+' 超过10MB')
    const body=new FormData();body.append('file',file)
-   const added=await api('/attachments',body)
+   const added=await draft.upload(body)
+   if(!added)break
    uploads[field.key]=[...(uploads[field.key]||[]),added]
    data[field.key]=uploads[field.key].map(f=>f.id)
   }
  }catch(e){error.value=e.message}finally{busy.value=false;e.target.value=''}
 }
-function removeFile(field,index){uploads[field.key].splice(index,1);data[field.key]=uploads[field.key].map(x=>x.id)}
+async function removeFile(field,index){
+ error.value='';busy.value=true
+ try{await draft.remove(uploads[field.key][index].id);uploads[field.key].splice(index,1);data[field.key]=uploads[field.key].map(x=>x.id)}
+ catch(e){error.value=e.message}finally{busy.value=false}
+}
 async function send(){
  error.value='';busy.value=true
  try{
   const missing=props.fields.find(f=>f.type==='file'&&f.required&&!data[f.key]?.length)
   if(missing)throw Error('请上传'+missing.label)
-  const result=await props.submit({...data});emit('done',result)
+  const result=await props.submit({...data});draft.commit();emit('done',result)
  }catch(e){error.value=e.message}finally{busy.value=false}
 }
 </script>
 <template>
- <div class="modal-backdrop" @click.self="!busy&&emit('close')">
+ <div class="modal-backdrop" @click.self="close">
   <section ref="dialog" class="dialog form-dialog" role="dialog" aria-modal="true" :aria-labelledby="formId+'-title'" @keydown="keydown">
-   <header class="dialog-header"><h2 :id="formId+'-title'">{{title}}</h2><button type="button" class="icon-button" aria-label="关闭窗口" :disabled="busy" @click="emit('close')"><AppIcon name="close" :size="20"/></button></header>
+   <header class="dialog-header"><h2 :id="formId+'-title'">{{title}}</h2><button type="button" class="icon-button" aria-label="关闭窗口" :disabled="busy" @click="close"><AppIcon name="close" :size="20"/></button></header>
    <form class="dialog-form" @submit.prevent="send">
     <div class="dialog-body">
      <p v-if="description" class="dialog-description"><AppIcon name="info" :size="16"/><span>{{description}}</span></p>
@@ -86,7 +94,7 @@ async function send(){
      </section>
      <div v-if="error" class="error-box" role="alert"><AppIcon name="alert" :size="16"/>{{error}}</div>
     </div>
-    <footer class="dialog-footer"><span class="required-note"><span class="required-mark">*</span> 为必填项</span><div><button type="button" :disabled="busy" @click="emit('close')">取消</button><button type="submit" class="primary" :disabled="busy">{{busy?'正在处理…':button}}</button></div></footer>
+    <footer class="dialog-footer"><span class="required-note"><span class="required-mark">*</span> 为必填项</span><div><button type="button" :disabled="busy" @click="close">取消</button><button type="submit" class="primary" :disabled="busy">{{busy?'正在处理…':button}}</button></div></footer>
    </form>
   </section>
  </div>

@@ -16,6 +16,7 @@ public class Api {
     @PostMapping("/login") public Object login(HttpServletRequest req,@RequestBody Map<String,Object> b){return auth.login(req,b);}
     @PostMapping("/logout") public Object logout(HttpServletRequest req){req.getSession().invalidate();return map("ok",true);}
     @PostMapping("/attachments") public Object upload(HttpServletRequest req,@RequestParam("file") MultipartFile file)throws Exception{return files.upload(file,auth.optional(req),auth.owner(req));}
+    @DeleteMapping("/attachments/{id}") public Object deleteAttachment(HttpServletRequest req,@PathVariable String id){files.deleteDraft(id,auth.optional(req),auth.owner(req));return map("ok",true);}
     @GetMapping("/attachments/{id}") public ResponseEntity<?> download(HttpServletRequest req,@PathVariable String id){var f=files.readable(id,auth.optional(req),auth.owner(req));return ResponseEntity.ok().contentType(MediaType.parseMediaType(str(f,"mime"))).header("Content-Disposition",ContentDisposition.attachment().filename(str(f,"filename"),java.nio.charset.StandardCharsets.UTF_8).build().toString()).body(new FileSystemResource(files.path(id)));}
     @GetMapping("/reports") public Object reports(HttpServletRequest req){return clues.reports(auth.user(req));}
     @GetMapping("/reports/{id}") public Object report(HttpServletRequest req,@PathVariable long id){return clues.report(auth.user(req),id);}

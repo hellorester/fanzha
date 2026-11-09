@@ -1,18 +1,18 @@
 """Runs real HTTP workflows against the local course prototype; uses virtual data only."""
-import urllib.request,urllib.error,http.cookiejar,json,uuid,datetime,time,pathlib,sys
+import urllib.request,urllib.error,http.cookiejar,json,uuid,datetime,time,pathlib,sys,os
 sys.stdout.reconfigure(encoding='utf-8')
-BASE='http://127.0.0.1:8088/api'
+BASE=os.environ.get('TEST_BASE_URL','http://127.0.0.1:8088/api')
 results=[]
 class Client:
  def __init__(self,name=None):
   self.opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
   self.csrf=''; self.name=name or 'anonymous'; self.csrf=self.call('/session')['csrf']
   if name:self.csrf=self.call('/login',{'username':name,'password':'Demo2026!'})['csrf']
- def call(self,path,body=None,expected=200,raw=None,ctype=None):
+ def call(self,path,body=None,expected=200,raw=None,ctype=None,method=None):
   headers={'X-CSRF-Token':self.csrf}
   data=raw if raw is not None else None if body is None else json.dumps(body,ensure_ascii=False).encode()
   if data is not None:headers['Content-Type']=ctype or 'application/json'
-  req=urllib.request.Request(BASE+path,data=data,headers=headers)
+  req=urllib.request.Request(BASE+path,data=data,headers=headers,method=method)
   started=time.perf_counter()
   try:
    with self.opener.open(req,timeout=20) as response:status=response.status;text=response.read()

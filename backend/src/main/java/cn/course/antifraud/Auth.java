@@ -11,6 +11,9 @@ import static cn.course.antifraud.Support.*;
 @Component
 public class Auth implements HandlerInterceptor, WebMvcConfigurer {
     private final Support s;
+    private volatile boolean ready;
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void ready(){ready=true;}
     private final Map<String,List<Long>> failures=new ConcurrentHashMap<>();
     public Auth(Support s){this.s=s;}
     public void addInterceptors(InterceptorRegistry r){r.addInterceptor(this).addPathPatterns("/**");}
@@ -22,6 +25,7 @@ public class Auth implements HandlerInterceptor, WebMvcConfigurer {
         res.setHeader("X-Content-Type-Options","nosniff");res.setHeader("Cache-Control","no-store");
         res.setHeader("Referrer-Policy","same-origin");res.setHeader("X-Frame-Options","DENY");
         if(!req.getRequestURI().startsWith("/api/"))return true;
+        if(!ready)throw new Problem(503,"系统正在完成初始化，请稍后重试");
         HttpSession session=req.getSession();
         String csrf=token(session);
         if(!Set.of("GET","HEAD","OPTIONS").contains(req.getMethod())){
@@ -30,7 +34,7 @@ public class Auth implements HandlerInterceptor, WebMvcConfigurer {
         Object uid=session.getAttribute("uid");
         if(uid!=null){Map<String,Object> m=s.optional("SELECT * FROM af_user WHERE id=? AND enabled=TRUE",uid);if(m==null){session.invalidate();throw new Problem(401,"账号已停用，请重新登录");}req.setAttribute("user",toUser(m));}
         String path=req.getRequestURI();
-        boolean publicPath=Set.of("/api/session","/api/login","/api/anonymous/query").contains(path)||path.equals("/api/reports")&&req.getMethod().equals("POST")||path.startsWith("/api/articles")&&req.getMethod().equals("GET")||path.equals("/api/attachments")&&req.getMethod().equals("POST")||path.startsWith("/api/attachments/")&&req.getMethod().equals("GET");
+        boolean publicPath=Set.of("/api/session","/api/login","/api/anonymous/query").contains(path)||path.equals("/api/reports")&&req.getMethod().equals("POST")||path.startsWith("/api/articles")&&req.getMethod().equals("GET")||path.equals("/api/attachments")&&req.getMethod().equals("POST")||path.startsWith("/api/attachments/")&&Set.of("GET","DELETE").contains(req.getMethod());
         if(!publicPath&&optional(req)==null)throw new Problem(401,"请先登录");
         return true;
     }
