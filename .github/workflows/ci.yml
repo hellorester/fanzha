@@ -85,6 +85,7 @@ jobs:
           python tests/boundaries.py
           python tests/review_regressions.py
           python tests/integrity_regressions.py
+          python tests/local_review_regressions.py
           kill "$server_pid"
           wait "$server_pid" || true
           python tests/migration_safety.py

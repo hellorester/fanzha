@@ -24,11 +24,11 @@ public class Audit {
             var rows=s.rows("SELECT * FROM af_log WHERE id>? ORDER BY id LIMIT 500",cursor);if(rows.isEmpty())break;
             for(var row:rows){
                 cursor=num(row,"id");count++;
-                if(!previous.equals(str(row,"prev_hash"))||!digest(s,row,previous).equals(str(row,"entry_hash")))return map("ok",false,"checked",count,"firstInvalid",cursor,"message","日志内容或链路校验失败","sealedAt",head.get("sealed_at"));
+                if(!previous.equals(str(row,"prev_hash"))||!digest(s,row,previous).equals(str(row,"entry_hash")))return map("ok",false,"checked",count,"firstInvalid",cursor,"message","日志内容或链路校验失败","sealedAt",head.get("sealed_at"),"checkedAt",s.now());
                 previous=str(row,"entry_hash");
             }
         }
         boolean ok=cursor==num(head,"last_id")&&count==num(head,"entry_count")&&previous.equals(str(head,"last_hash"));
-        return map("ok",ok,"checked",count,"firstInvalid",ok?null:cursor,"message",ok?"日志链校验通过":"日志尾部或条数与校验头不符","sealedAt",head.get("sealed_at"));
+        return map("ok",ok,"checked",count,"firstInvalid",ok?null:cursor,"message",ok?"日志链校验通过":"日志尾部或条数与校验头不符","sealedAt",head.get("sealed_at"),"checkedAt",s.now());
     }
 }

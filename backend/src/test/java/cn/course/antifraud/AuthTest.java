@@ -11,7 +11,7 @@ import static cn.course.antifraud.Support.*;
 
 class AuthTest {
     @Test void requestsWaitForMigrationsAndSeedToComplete(){
-        Auth auth=new Auth(mock(Support.class));var request=new MockHttpServletRequest("GET","/api/session");var response=new org.springframework.mock.web.MockHttpServletResponse();
+        Auth auth=new Auth(mock(Support.class),mock(QueryLimiter.class));var request=new MockHttpServletRequest("GET","/api/session");var response=new org.springframework.mock.web.MockHttpServletResponse();
         assertEquals(503,assertThrows(Problem.class,()->auth.preHandle(request,response,new Object())).status);
         auth.ready();assertTrue(auth.preHandle(request,response,new Object()));
     }
@@ -19,7 +19,7 @@ class AuthTest {
     private Auth authFor(String role){
         Support support=mock(Support.class);
         when(support.optional("SELECT * FROM af_user WHERE username=?","account")).thenReturn(map("id",7,"username","account","display_name","登录验证","role",role,"enabled",true,"password_hash",PASSWORD_HASH,"org_id",1,"community_id",1));
-        return new Auth(support);
+        return new Auth(support,mock(QueryLimiter.class));
     }
     private Map<String,Object> credentials(String role){return map("username","account","password","LoginTest2026!","role",role);}
     @ParameterizedTest @ValueSource(strings={"PUBLIC","CENTER","PAYMENT","GRID"})
@@ -52,5 +52,12 @@ class AuthTest {
     @Test void ExistingClientsWithoutIdentityStillUseStoredRole(){
         var request=new MockHttpServletRequest();var body=credentials("PUBLIC");body.remove("role");
         assertEquals("PUBLIC",((User)authFor("PUBLIC").login(request,body).get("user")).role());
+    }
+    @ParameterizedTest @ValueSource(longs={0,1,2})
+    void onlyUniqueVerifiedBindingGrantsSubjectAccess(long accounts){
+        var support=mock(Support.class);when(support.count(anyString(),eq(9L))).thenReturn(accounts);
+        var auth=new Auth(support,mock(QueryLimiter.class));var row=map("id",7,"role","PUBLIC","victim_id",9,"verified",true);
+        var user=auth.toUser(row);assertEquals(accounts==1,user.verified());assertEquals(accounts==1?9:0,user.victimId());
+        row.put("verified",false);user=auth.toUser(row);assertFalse(user.verified());assertEquals(0,user.victimId());
     }
 }

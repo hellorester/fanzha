@@ -14,6 +14,7 @@ class DeadlineTest {
     private Support support(JdbcTemplate db,Map<String,Object> command){
         return new Support(db,null,Base64.getEncoder().encodeToString(new byte[32])){
             @Override public Map<String,Object> one(String query,Object... args){return query.contains("FROM af_bank")?map("id",1,"available",1000):command;}
+            @Override public Map<String,Object> lockAlert(long id){return command;}
             @Override public Map<String,Object> optional(String query,Object... args){return command;}
             @Override public void log(User u,String action,String type,long id,String oldState,String newState,String note){}
             @Override public LocalDateTime now(){return base;}

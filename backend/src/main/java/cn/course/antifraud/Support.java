@@ -49,6 +49,14 @@ public class Support {
     public Map<String,Object> one(String sql,Object...args){var r=optional(sql,args);if(r==null)throw new Problem(404,"记录不存在或无权访问");return r;}
     public long count(String sql,Object...args){Long v=db.queryForObject(sql,Long.class,args);return v==null?0:v;}
     public long insert(String sql,Object...args){GeneratedKeyHolder h=new GeneratedKeyHolder();db.update(c->{PreparedStatement p=c.prepareStatement(sql,Statement.RETURN_GENERATED_KEYS);for(int i=0;i<args.length;i++)p.setObject(i+1,args[i]);return p;},h);return Objects.requireNonNull(h.getKey()).longValue();}
+    // Call inside the caller's transaction: identity -> alert -> commands -> funds/materials -> audit.
+    public Map<String,Object> lockAlert(long id){return lockAlert(id,0);}
+    public Map<String,Object> lockAlert(long id,long requestedVictim){
+        var peek=one("SELECT victim_id FROM af_alert WHERE id=?",id);long previous=num(peek,"victim_id");
+        java.util.stream.LongStream.of(previous,requestedVictim).filter(v->v>0).distinct().sorted().forEach(v->one("SELECT id FROM af_victim WHERE id=? FOR UPDATE",v));
+        var alert=one("SELECT * FROM af_alert WHERE id=? FOR UPDATE",id);
+        conflict(previous==num(alert,"victim_id"),"身份关联刚刚更新，请刷新后重试");return alert;
+    }
     public String code(String prefix){return prefix+now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMdd"))+UUID.randomUUID().toString().replace("-","").substring(0,10).toUpperCase();}
     public static String random(){byte[] b=new byte[32];new SecureRandom().nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b);}
     public static String hash(String input){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);}}

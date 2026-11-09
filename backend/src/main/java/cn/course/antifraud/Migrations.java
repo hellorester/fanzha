@@ -69,10 +69,19 @@ public class Migrations implements CommandLineRunner {
                         mark(5);
                     });
                 }
+                if(!applied(6)){
+                    column("af_report","request_owner_key","CHAR(64)");column("af_report","query_token_enc","TEXT");
+                    column("af_alert","score_config_id","BIGINT");column("af_alert","score_blacklist_version","BIGINT");
+                    column("af_command","retry_of","BIGINT");index("af_command","ix_command_retry","retry_of");
+                    mark(6);
+                }
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }
         }
+    }
+    private void column(String table,String name,String type){
+        if(s.count("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?",table,name)==0)s.db.execute("ALTER TABLE "+table+" ADD COLUMN "+name+" "+type);
     }
     private boolean applied(int version){return s.count("SELECT COUNT(*) FROM af_migration WHERE version=?",version)>0;}
     private void mark(int version){s.db.update("INSERT INTO af_migration(version,applied_at) VALUES(?,?)",version,s.now());}

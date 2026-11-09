@@ -101,8 +101,8 @@ function reportForm(){
   f('transactionTime','交易时刻','time',{optional:true}),
   f('remote','异地交易','checkbox'),f('repeat','短时重复交易','checkbox'),f('newLarge','新开户大额交易','checkbox'),
   {...attachment(),section:'材料与提交'},
-  ...(isCenter.value?[f('victimId','已核验受害人','select',{wide:true,options:option(meta.value.victims),help:'未确认主体时可留空，后续由中心补录。'})]:[f('anonymous','匿名提交','checkbox',{wide:true,help:'提交后请保存受理编号和查询凭证，用于查询办理进度。'})])
- ],'/reports',{kind:'号码',anonymous:!user.value,requestKey:crypto.randomUUID()},'请填写已知信息；不确定的交易情况可以留空。')
+  ...(isCenter.value?[f('victimId','已核验受害人','select',{wide:true,options:option(meta.value.victims),help:'未确认主体时可留空，后续由中心补录。'})]:user.value?.verified?[f('anonymous','匿名提交','checkbox',{wide:true,help:'提交后请保存受理编号和查询凭证，用于查询办理进度。'})]:[])
+ ],'/reports',{kind:'号码',anonymous:!isCenter.value&&!user.value?.verified,requestKey:crypto.randomUUID()},'请填写已知信息；不确定的交易情况可以留空。')
 }
 function reviewForm(a){form('人工复核',[f('decision','复核结论','select',{options:['通过','驳回'],required:true}),f('level','确认风险等级','select',{options:['高','中','低'],required:true}),f('victimId','核验后的受害人','select',{options:option(meta.value.victims)}),f('communityId','派发社区','select',{options:option(meta.value.communities)}),note()],`/alerts/${a.id}/review`,{decision:'通过',level:a.level,victimId:a.victim_id||'',communityId:a.community_id||''},'资料缺失可以先保存核实意见，派发前必须补齐受害人、社区及目标账户。')}
 function dispatchForm(a){form('联动派发',[f('bankId','目标账户','select',{required:true,options:(meta.value.banks||[]).map(b=>({value:b.id,label:businessName(b.org_name)+' · '+b.account+' · '+businessName(b.holder)}))}),f('amount','申请止付金额','number',{min:.01,step:.01,help:'未知时可留空，由机构独立核查。'})],`/alerts/${a.id}/dispatch`,{},'同时生成或复用止付指令与上门任务。重复提交会返回已有单号。')}

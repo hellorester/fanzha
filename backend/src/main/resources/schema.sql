@@ -28,3 +28,11 @@ CREATE TABLE IF NOT EXISTS af_upload_guard(owner_key CHAR(64) PRIMARY KEY,touche
 CREATE TABLE IF NOT EXISTS af_bank_origin(bank_id BIGINT PRIMARY KEY,opening DECIMAL(16,2) NOT NULL,source VARCHAR(30) NOT NULL,created_at DATETIME NOT NULL,FOREIGN KEY(bank_id) REFERENCES af_bank(id));
 CREATE TABLE IF NOT EXISTS af_query_limit(client_key CHAR(64) PRIMARY KEY,attempts BIGINT NOT NULL,window_end DATETIME NOT NULL,INDEX(window_end));
 CREATE TABLE IF NOT EXISTS af_audit_head(id INT PRIMARY KEY,last_id BIGINT NOT NULL,last_hash CHAR(64) NOT NULL,entry_count BIGINT NOT NULL,sealed_at DATETIME NOT NULL);
+
+CREATE TABLE IF NOT EXISTS af_request_guard (
+ request_key CHAR(64) PRIMARY KEY, touched_at DATETIME NOT NULL
+);
+CREATE TABLE IF NOT EXISTS af_rule_state (
+ id INT PRIMARY KEY, blacklist_version BIGINT NOT NULL DEFAULT 0
+);
+INSERT IGNORE INTO af_rule_state(id,blacklist_version) VALUES(1,0);
