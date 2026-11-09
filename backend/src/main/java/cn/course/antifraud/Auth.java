@@ -37,10 +37,13 @@ public class Auth implements HandlerInterceptor, WebMvcConfigurer {
     public User toUser(Map<String,Object> m){return new User(num(m,"id"),str(m,"username"),str(m,"display_name"),str(m,"role"),num(m,"org_id"),num(m,"community_id"),num(m,"victim_id"),yes(m,"verified"),yes(m,"admin"));}
     public Map<String,Object> login(HttpServletRequest req,Map<String,Object> b){
         String username=required(b,"username",60),password=required(b,"password",200);
+        String selectedRole=str(b,"role");
+        if(!selectedRole.isEmpty()&&!Set.of("PUBLIC","CENTER","PAYMENT","GRID").contains(selectedRole))throw new Problem(400,"请选择有效的登录身份");
         List<Long> f=failures.computeIfAbsent(username,k->Collections.synchronizedList(new ArrayList<>()));
         synchronized(f){f.removeIf(t->t<System.currentTimeMillis()-300000);if(f.size()>=8)throw new Problem(429,"尝试次数较多，请5分钟后重试");}
         Map<String,Object> m=s.optional("SELECT * FROM af_user WHERE username=?",username);
         if(m==null||!yes(m,"enabled")||!checkPassword(password,str(m,"password_hash"))||str(m,"role").equals("PAYMENT")&&num(m,"org_id")==0||str(m,"role").equals("GRID")&&num(m,"community_id")==0){f.add(System.currentTimeMillis());throw new Problem(401,"账号、密码或账号状态不正确");}
+        if(!selectedRole.isEmpty()&&!selectedRole.equals(str(m,"role")))throw new Problem(403,"所选身份与账号不符，请重新选择登录身份。");
         failures.remove(username);req.getSession().invalidate();HttpSession session=req.getSession(true);session.setAttribute("uid",num(m,"id"));User u=toUser(m);s.log(u,"登录","account",u.id(),null,null,"登录成功");return map("user",u,"csrf",token(session));
     }
 }
