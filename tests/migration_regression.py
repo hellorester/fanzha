@@ -1,6 +1,6 @@
 """Exercise upgrade from legacy fingerprints while preserving every business row."""
 from test_db import *
-import json,sys
+import json,sys,time
 from integration import Client,require,results
 output=pathlib.Path(__file__).resolve().parent/'results'
 output.mkdir(exist_ok=True)
@@ -10,20 +10,40 @@ if sys.argv[1]=='prepare':
     values=['https://legacy-migration.example/login','https://legacy-migration.example.:443/login']
     for value in values:
         sql("INSERT INTO af_blacklist(kind,value_hash,value_enc,source,enabled) VALUES('网址',"+quoted(hashlib.sha256(value.encode()).hexdigest())+','+quoted(encryption(value))+",'migration-regression',TRUE)")
-    tables=sql("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE 'af_%' AND TABLE_NAME NOT IN ('af_migration','af_log','af_notice','af_upload_guard') ORDER BY TABLE_NAME").splitlines()
+    # A representative multi-batch fixture, not a claim about production-scale upgrades.
+    bulk=[]
+    for i in range(3000):
+        host=f'migration-bulk-{i:05d}.example'
+        value=f'https://{host}/a/%2e%2e/login'
+        bulk.append("('网址',"+quoted(hashlib.sha256(value.encode()).hexdigest())+','+quoted(encryption(value))+','+quoted(f'migration-bulk-{i:05d}')+",TRUE)")
+    sql("INSERT INTO af_blacklist(kind,value_hash,value_enc,source,enabled) VALUES"+','.join(bulk))
+    sql("UPDATE af_blacklist SET value_hash=SHA2(CONCAT('legacy-blacklist-',id),256); ALTER TABLE af_blacklist ADD UNIQUE INDEX kind(kind,value_hash), ADD UNIQUE INDEX uq_review_source_id(source,id)")
+    tables=sql("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE 'af_%' AND TABLE_NAME NOT IN ('af_migration','af_notice','af_upload_guard','af_query_limit') ORDER BY TABLE_NAME").splitlines()
     counts={table:int(sql('SELECT COUNT(*) FROM '+table)) for table in tables}
-    sql("UPDATE af_report SET value_hash=SHA2(CONCAT('legacy-report-',id),256); UPDATE af_bank SET number_hash=SHA2(CONCAT('legacy-bank-',id),256); DELETE FROM af_migration WHERE version=2")
-    snapshot.write_text(json.dumps(counts),encoding='utf-8')
+    sql("UPDATE af_report SET value_hash=SHA2(CONCAT('legacy-report-',id),256); UPDATE af_bank SET number_hash=SHA2(CONCAT('legacy-bank-',id),256); DELETE FROM af_migration WHERE version IN (1,2,3,4,5)")
+    openings=sql('SELECT bank_id,opening FROM af_bank_origin ORDER BY bank_id')
+    sql('DELETE FROM af_bank_origin; DELETE FROM af_audit_head; ALTER TABLE af_log DROP COLUMN prev_hash, DROP COLUMN entry_hash')
+    snapshot.write_text(json.dumps({'counts':counts,'openings':openings,'startedAt':time.time()}),encoding='utf-8')
     print('Prepared legacy fingerprint fixtures in disposable database')
 else:
-    before=json.loads(snapshot.read_text(encoding='utf-8'))
+    fixture=json.loads(snapshot.read_text(encoding='utf-8'));before=fixture['counts']
     require(all(int(sql('SELECT COUNT(*) FROM '+table))==count for table,count in before.items()),'升级不丢失任何业务记录')
     expected=fingerprint('网址','legacy-migration.example/login')
     require(sql("SELECT COUNT(*) FROM af_blacklist WHERE source='migration-regression' AND value_hash="+quoted(expected))=='2','旧等价URL的两个来源均保留并重新建立统一指纹')
     require(sql("SELECT number_hash FROM af_bank WHERE id=1")==fingerprint('账户','6222000000000001'),'既有账户指纹迁移成功')
     require(sql('SELECT COUNT(*) FROM af_migration WHERE version=2')=='1','升级版本成功记录')
+    require(sql("SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='af_blacklist' AND INDEX_NAME='kind'")=='0','只移除已知旧版的kind唯一索引')
+    require(sql("SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='af_blacklist' AND INDEX_NAME='uq_review_source_id' AND NON_UNIQUE=0")=='source,id','团队额外添加的唯一索引完整保留')
+    require(sql("SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='af_blacklist' AND INDEX_NAME='ix_blacklist_value' AND NON_UNIQUE=1")=='kind,value_hash','迁移后的匹配索引结构正确')
+    hashes=sql("SELECT source,value_hash FROM af_blacklist WHERE source LIKE 'migration-bulk-%'").splitlines()
+    require(len(hashes)==3000 and all(row.split('\t')[1]==fingerprint('网址',row.split('\t')[0]+'.example/login') for row in hashes),'3000条历史编码URL跨批迁移后逐条匹配正确')
+    elapsed=round(time.time()-fixture['startedAt'],3)
+    print(f'Legacy restart and upgrade elapsed: {elapsed}s; bulk URL rows: 3000')
     center=Client('center');r=center.call('/reports',{'kind':'网址','value':'https://legacy-migration.example/login','description':'迁移后旧黑名单命中验证','requestKey':__import__('uuid').uuid4().hex})
     alert=center.call('/alerts/'+str(center.call('/reports/'+str(r['id']))['alert_id']))
     require(any(row['details']['hit'] for row in alert['scores']),'迁移后的旧黑名单可供新举报正确匹配')
-    (output/'migration-regressions.json').write_text(json.dumps({'status':'passed','results':results},ensure_ascii=False,indent=2),encoding='utf-8')
+    require(sql('SELECT bank_id,opening FROM af_bank_origin ORDER BY bank_id')==fixture['openings'],'旧库首次对账基线反推与原初始余额一致')
+    require(center.call('/reconciliation')['ok'],'旧数据升级后独立资金对账通过')
+    require(center.call('/audit/verify')['ok'],'旧数据升级后审计链仍完整')
+    (output/'migration-regressions.json').write_text(json.dumps({'status':'passed','bulkRows':3000,'restartAndMigrationSeconds':elapsed,'results':results},ensure_ascii=False,indent=2),encoding='utf-8')
     print('Migration regression checks passed')

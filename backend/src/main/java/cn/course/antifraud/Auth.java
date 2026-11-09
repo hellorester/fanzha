@@ -12,6 +12,7 @@ import static cn.course.antifraud.Support.*;
 public class Auth implements HandlerInterceptor, WebMvcConfigurer {
     private final Support s;
     private volatile boolean ready;
+    public boolean isReady(){return ready;}
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void ready(){ready=true;}
     private final Map<String,List<Long>> failures=new ConcurrentHashMap<>();

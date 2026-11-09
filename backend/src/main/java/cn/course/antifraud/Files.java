@@ -15,10 +15,10 @@ import static cn.course.antifraud.Support.*;
 
 @Service
 public class Files {
-    private final Support s;private final Path root;private final TransactionTemplate tx;
+    private final Support s;private final Path root;private final TransactionTemplate tx;private final Auth auth;
     private static final int MAX_DRAFT_FILES=20;
     private static final long MAX_DRAFT_BYTES=50L*1024*1024;
-    public Files(Support s,@Value("${app.storage}") String directory,PlatformTransactionManager manager)throws IOException{this.s=s;tx=new TransactionTemplate(manager);root=Path.of(directory).toAbsolutePath().normalize();java.nio.file.Files.createDirectories(root);}
+    public Files(Support s,@Value("${app.storage}") String directory,PlatformTransactionManager manager,Auth auth)throws IOException{this.s=s;this.auth=auth;tx=new TransactionTemplate(manager);root=Path.of(directory).toAbsolutePath().normalize();java.nio.file.Files.createDirectories(root);}
     public Path path(String id){require(id.matches("[a-f0-9-]{36}"),"附件编号无效");Path p=root.resolve(id).normalize();require(p.startsWith(root),"附件路径无效");return p;}
     @Transactional public Map<String,Object> upload(MultipartFile file,User u,String owner)throws IOException{
         // The database lock serializes concurrent uploads across tabs and application instances.
@@ -56,6 +56,7 @@ public class Files {
     private void erase(String id){try{java.nio.file.Files.deleteIfExists(path(id));}catch(IOException e){org.slf4j.LoggerFactory.getLogger(Files.class).warn("Attachment cleanup deferred for {}",id);}}
     @Scheduled(initialDelayString="${app.attachments.cleanup-initial-delay:60000}",fixedDelayString="${app.attachments.cleanup-delay:3600000}")
     public void cleanup(){
+        if(!auth.isReady())return;
         var cutoff=s.now().minusHours(24);
         for(var candidate:s.rows("SELECT id FROM af_attachment WHERE entity_id IS NULL AND created_at<? ORDER BY created_at LIMIT 500",cutoff)){
             String id=str(candidate,"id");tx.executeWithoutResult(status->{
@@ -75,7 +76,7 @@ public class Files {
         for(Object fileId:ids){Map<String,Object> f=s.one("SELECT * FROM af_attachment WHERE id=? FOR UPDATE",fileId);require(str(f,"owner_key").equals(hash(owner))||u!=null&&num(f,"user_id")==u.id(),"无法关联其他人的附件");conflict(f.get("entity_id")==null||str(f,"entity_type").equals(type)&&num(f,"entity_id")==id,"附件已关联其他单据");s.db.update("UPDATE af_attachment SET entity_type=?,entity_id=? WHERE id=?",type,id,fileId);}
     }
     public List<Map<String,Object>> list(String type,long id){return s.rows("SELECT id,filename,mime,bytes FROM af_attachment WHERE entity_type=? AND entity_id=?",type,id);}
-    public Map<String,Object> readable(String id,User u,String owner){Map<String,Object> f=s.one("SELECT * FROM af_attachment WHERE id=?",id);boolean allowed=f.get("entity_id")==null&&str(f,"owner_key").equals(hash(owner));if(u!=null){allowed|=u.role().equals("CENTER");String t=str(f,"entity_type");long e=num(f,"entity_id");if(t.equals("report")){allowed|=u.role().equals("PUBLIC")&&s.count("SELECT COUNT(*) FROM af_report WHERE id=? AND (owner_id=? OR victim_id=?)",e,u.id(),u.victimId()==0?-1:u.victimId())>0;if(u.role().equals("PAYMENT"))allowed|=s.count("SELECT COUNT(*) FROM af_command c JOIN af_report r ON r.alert_id=c.alert_id WHERE r.id=? AND c.org_id=?",e,u.orgId())>0;if(u.role().equals("GRID"))allowed|=s.count("SELECT COUNT(*) FROM af_visit v JOIN af_report r ON r.alert_id=v.alert_id WHERE r.id=? AND v.community_id=? AND v.assignee_id=?",e,u.communityId(),u.id())>0;}else if(t.equals("visit")&&u.role().equals("GRID"))allowed|=s.count("SELECT COUNT(*) FROM af_visit WHERE id=? AND community_id=? AND assignee_id=?",e,u.communityId(),u.id())>0;else if(t.equals("receipt")&&u.role().equals("PAYMENT"))allowed|=s.count("SELECT COUNT(*) FROM af_receipt r JOIN af_command c ON r.command_id=c.id WHERE r.id=? AND c.org_id=?",e,u.orgId())>0;else if(t.equals("application")){allowed|=u.role().equals("PUBLIC")&&s.count("SELECT COUNT(*) FROM af_application WHERE id=? AND owner_id=?",e,u.id())>0;if(u.role().equals("PAYMENT"))allowed|=s.count("SELECT COUNT(*) FROM af_command WHERE application_id=? AND org_id=?",e,u.orgId())>0;}}
+    public Map<String,Object> readable(String id,User u,String owner){Map<String,Object> f=s.one("SELECT * FROM af_attachment WHERE id=?",id);boolean allowed=f.get("entity_id")==null&&str(f,"owner_key").equals(hash(owner));if(u!=null){allowed|=u.role().equals("CENTER");String t=str(f,"entity_type");long e=num(f,"entity_id");if(t.equals("report")){allowed|=u.role().equals("PUBLIC")&&s.count("SELECT COUNT(*) FROM af_report WHERE id=? AND owner_id=?",e,u.id())>0;if(u.role().equals("PAYMENT"))allowed|=s.count("SELECT COUNT(*) FROM af_command c JOIN af_report r ON r.alert_id=c.alert_id WHERE r.id=? AND c.org_id=?",e,u.orgId())>0;if(u.role().equals("GRID"))allowed|=s.count("SELECT COUNT(*) FROM af_visit v JOIN af_report r ON r.alert_id=v.alert_id WHERE r.id=? AND v.community_id=? AND v.assignee_id=?",e,u.communityId(),u.id())>0;}else if(t.equals("visit")&&u.role().equals("GRID"))allowed|=s.count("SELECT COUNT(*) FROM af_visit WHERE id=? AND community_id=? AND assignee_id=?",e,u.communityId(),u.id())>0;else if(t.equals("receipt")&&u.role().equals("PAYMENT"))allowed|=s.count("SELECT COUNT(*) FROM af_receipt r JOIN af_command c ON r.command_id=c.id WHERE r.id=? AND c.org_id=?",e,u.orgId())>0;else if(t.equals("application")){allowed|=u.role().equals("PUBLIC")&&s.count("SELECT COUNT(*) FROM af_application WHERE id=? AND owner_id=?",e,u.id())>0;if(u.role().equals("PAYMENT"))allowed|=s.count("SELECT COUNT(*) FROM af_command WHERE application_id=? AND org_id=?",e,u.orgId())>0;}}
         if(!allowed)throw new Problem(404,"附件不存在或无权访问");return f;
     }
 }

@@ -19,6 +19,10 @@ public class Support {
     public final JdbcTemplate db;
     public final JsonMapper json;
     private final byte[] key;
+    private org.springframework.transaction.support.TransactionTemplate transactions;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void transactions(org.springframework.transaction.PlatformTransactionManager manager){transactions=new org.springframework.transaction.support.TransactionTemplate(manager);}
+
     public String fingerprint(String kind,String normalized){
         try{
             Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(key,"HmacSHA256"));
@@ -53,7 +57,16 @@ public class Support {
     public static String password(String raw){String salt=random();return "pbkdf2$210000$"+salt+"$"+derive(raw,salt,210000);}
     private static String derive(String raw,String salt,int rounds){try{return Base64.getEncoder().encodeToString(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(new PBEKeySpec(raw.toCharArray(),Base64.getUrlDecoder().decode(salt),rounds,256)).getEncoded());}catch(Exception e){throw new IllegalStateException(e);}}
     public static boolean checkPassword(String raw,String stored){try{String[] p=stored.split("\\$");return MessageDigest.isEqual(derive(raw,p[2],Integer.parseInt(p[1])).getBytes(),p[3].getBytes());}catch(Exception e){return false;}}
-    public void log(User u,String action,String type,long id,String oldState,String newState,String note){db.update("INSERT INTO af_log(actor_id,actor_role,action,entity_type,entity_id,old_state,new_state,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",u==null?null:u.id(),u==null?"SYSTEM":u.role(),action,type,id,oldState,newState,note,now());}
+    public void log(User u,String action,String type,long id,String oldState,String newState,String note){
+        transactions.executeWithoutResult(status->{
+        var head=one("SELECT * FROM af_audit_head WHERE id=1 FOR UPDATE");
+        long logId=insert("INSERT INTO af_log(actor_id,actor_role,action,entity_type,entity_id,old_state,new_state,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",u==null?null:u.id(),u==null?"SYSTEM":u.role(),action,type,id,oldState,newState,note,now());
+        String previous=str(head,"last_hash"),digest=Audit.digest(this,one("SELECT * FROM af_log WHERE id=?",logId),previous);
+        db.update("UPDATE af_log SET prev_hash=?,entry_hash=? WHERE id=?",previous,digest,logId);
+        db.update("UPDATE af_audit_head SET last_id=?,last_hash=?,entry_count=entry_count+1 WHERE id=1",logId,digest);
+        });
+    }
+
     public static String mask(String v){if(v==null||v.length()<5)return "***";return v.substring(0,2)+"****"+v.substring(v.length()-4);}
     public static Map<String,Object> map(Object...pairs){Map<String,Object> m=new LinkedHashMap<>();for(int i=0;i<pairs.length;i+=2)m.put(pairs[i].toString(),pairs[i+1]);return m;}
     public record User(long id,String username,String displayName,String role,long orgId,long communityId,long victimId,boolean verified,boolean admin){

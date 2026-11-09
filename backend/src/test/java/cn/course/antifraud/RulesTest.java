@@ -9,7 +9,7 @@ class RulesTest {
   assertEquals(Rules.normalize("网址","http://example.com/login"),Rules.normalize("网址","http://example.com:80/login"));
   assertEquals(Rules.normalize("网址","https://例子.测试/login"),Rules.normalize("网址","https://xn--fsqu00a.xn--0zwm56d:443/login"));
   assertNotEquals(Rules.normalize("网址","https://example.com/login"),Rules.normalize("网址","https://example.com:8443/login"));
-  assertEquals("[::1]/login",Rules.normalize("网址","https://[::1]:443/login"));
+  assertEquals("[0:0:0:0:0:0:0:1]/login",Rules.normalize("网址","https://[::1]:443/login"));
   assertEquals("example.com/login",Rules.normalize("网址","https://example.com/a/../login"));
   for(String value:List.of("https://user@example.com/","https://example.com:/","https://example.com:65536/","https://example.com:abc/","https://bad_host/"))assertThrows(Problem.class,()->Rules.normalize("网址",value),value);
  }

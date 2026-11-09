@@ -9,8 +9,8 @@ import static cn.course.antifraud.Support.*;
 @RestController
 @RequestMapping("/api")
 public class BusinessApi {
- private final Support s;private final Auth auth;private final Commands commands;private final Community community;private final Admin admin;private final Queries queries;
- public BusinessApi(Support s,Auth auth,Commands commands,Community community,Admin admin,Queries queries){this.s=s;this.auth=auth;this.commands=commands;this.community=community;this.admin=admin;this.queries=queries;}
+ private final Support s;private final Auth auth;private final Commands commands;private final Community community;private final Admin admin;private final Queries queries;private final Reconciliation reconciliation;private final Audit audit;
+ public BusinessApi(Support s,Auth auth,Commands commands,Community community,Admin admin,Queries queries,Reconciliation reconciliation,Audit audit){this.s=s;this.auth=auth;this.commands=commands;this.community=community;this.admin=admin;this.queries=queries;this.reconciliation=reconciliation;this.audit=audit;}
  @GetMapping("/list/{resource}") public Object list(HttpServletRequest r,@PathVariable String resource,@RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="10") int size,@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="") String state,@RequestParam Map<String,String> filters){return queries.page(auth.user(r),resource,page,size,q,state,filters);}
  @GetMapping("/meta") public Object meta(HttpServletRequest r){return admin.meta(auth.user(r));}
  @GetMapping("/commands") public Object commands(HttpServletRequest r){return commands.list(auth.user(r));}
@@ -45,6 +45,8 @@ public class BusinessApi {
  @GetMapping("/articles/{id}") public Object article(HttpServletRequest r,@PathVariable long id){return community.article(auth.optional(r),id);}
  @PostMapping("/articles") public Object articleCreate(HttpServletRequest r,@RequestBody Map<String,Object> b){return map("id",community.saveArticle(auth.user(r),0,b));}
  @PostMapping("/articles/{id}") public Object articleSave(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){return map("id",community.saveArticle(auth.user(r),id,b));}
+ @GetMapping("/reconciliation") public Object reconciliation(HttpServletRequest r){return reconciliation.check(auth.user(r));}
+ @GetMapping("/audit/verify") public Object verifyAudit(HttpServletRequest r){return audit.verify(auth.user(r));}
  @GetMapping("/banks") public Object banks(HttpServletRequest r){return admin.banks(auth.user(r));}
  @GetMapping("/users") public Object users(HttpServletRequest r){return admin.users(auth.user(r));}
  @PostMapping("/users") public Object userCreate(HttpServletRequest r,@RequestBody Map<String,Object> b){return map("id",admin.user(auth.user(r),0,b));}

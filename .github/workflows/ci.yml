@@ -84,9 +84,11 @@ jobs:
           python tests/advanced.py
           python tests/boundaries.py
           python tests/review_regressions.py
-          python tests/migration_regression.py prepare
+          python tests/integrity_regressions.py
           kill "$server_pid"
           wait "$server_pid" || true
+          python tests/migration_safety.py
+          python tests/migration_regression.py prepare
           java -jar backend/target/antifraud-1.0.0.jar > .local/ci-migration.log 2>&1 &
           server_pid=$!
           python tests/wait_for_server.py

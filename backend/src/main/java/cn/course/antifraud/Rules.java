@@ -26,7 +26,7 @@ public final class Rules {
             require(Set.of("http","https").contains(scheme)&&authority!=null&&!authority.contains("@"),"网址格式不正确");
             String host,portText="";
             if(authority.startsWith("[")){
-                int end=authority.indexOf(']');require(end>0&&uri.getHost()!=null,"网址格式不正确");host=authority.substring(0,end+1).toLowerCase(Locale.ROOT);
+                int end=authority.indexOf(']');require(end>0&&uri.getHost()!=null,"网址格式不正确");host=ipv6(authority.substring(1,end));
                 String rest=authority.substring(end+1);require(rest.isEmpty()||rest.startsWith(":"),"网址端口无效");if(!rest.isEmpty())portText=rest.substring(1);
                 require(rest.isEmpty()||!portText.isEmpty(),"网址端口无效");
             }else{
@@ -39,10 +39,35 @@ public final class Rules {
             }
             int port=-1;if(!portText.isEmpty()){require(portText.matches("[0-9]{1,5}"),"网址端口无效");port=Integer.parseInt(portText);require(port>=1&&port<=65535,"网址端口无效");}
             if(scheme.equals("http")&&port==80||scheme.equals("https")&&port==443)port=-1;
-            String path=Objects.toString(uri.normalize().getRawPath(),"").replaceAll("/+$","");
+            String path=canonicalPath(Objects.toString(uri.getRawPath(),""));
             // Matching remains host + path; query strings/fragments do not change a risk entry.
             return host+(port<0?"":":"+port)+path;
         }catch(IllegalArgumentException e){throw new Problem(400,"网址格式不正确");}
+    }
+    private static String ipv6(String literal){
+        // Only a validated IP literal reaches getByName: never perform a hostname lookup.
+        require(literal.matches("[0-9A-Fa-f:.]+")&&literal.contains(":"),"网址IPv6地址无效");
+        try{
+            byte[] bytes=java.net.InetAddress.getByName(literal).getAddress();
+            if(bytes.length==4)return (bytes[0]&255)+"."+(bytes[1]&255)+"."+(bytes[2]&255)+"."+(bytes[3]&255);
+            List<String> groups=new ArrayList<>();for(int i=0;i<16;i+=2)groups.add(Integer.toHexString(((bytes[i]&255)<<8)|(bytes[i+1]&255)));
+            return "["+String.join(":",groups)+"]";
+        }catch(java.net.UnknownHostException e){throw new Problem(400,"网址IPv6地址无效");}
+    }
+    private static String canonicalPath(String raw){
+        StringBuilder path=new StringBuilder();
+        for(int i=0;i<raw.length();i++){
+            char c=raw.charAt(i);
+            if(c=='%'){
+                int value=Integer.parseInt(raw.substring(i+1,i+3),16);char decoded=(char)value;
+                if(value>=65&&value<=90||value>=97&&value<=122||value>=48&&value<=57||"-._~".indexOf(decoded)>=0)path.append(decoded);
+                else path.append('%').append(raw.substring(i+1,i+3).toUpperCase(Locale.ROOT));
+                i+=2;
+            }else path.append(c);
+        }
+        // Collapse literal slashes; encoded separators stay encoded to avoid merging distinct routes.
+        String normalized=URI.create("https://canonical.invalid"+path.toString().replaceAll("/+","/")).normalize().getRawPath();
+        return normalized.replaceAll("/+$","");
     }
     private static List<Integer> weights(Object raw){
         require(raw instanceof List<?>,"权重必须为五项整数");List<?> values=(List<?>)raw;require(values.size()==5,"权重必须恰好五项");
