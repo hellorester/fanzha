@@ -5,11 +5,14 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.*;
 import org.springframework.core.io.FileSystemResource;
 import java.util.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import static cn.course.antifraud.Support.*;
 
 @RestController
 @RequestMapping("/api")
 public class Api {
+    private static final Logger log=LoggerFactory.getLogger(Api.class);
     private final Support s;private final Auth auth;private final Clues clues;private final Files files;private final QueryLimiter limiter;
     public Api(Support s,Auth auth,Clues clues,Files files,QueryLimiter limiter){this.s=s;this.auth=auth;this.clues=clues;this.files=files;this.limiter=limiter;}
     @GetMapping("/session") public Object session(HttpServletRequest req){return map("user",auth.optional(req),"csrf",auth.token(req.getSession()),"now",s.now(),"mode","课程模拟演示");}
@@ -20,7 +23,7 @@ public class Api {
     @GetMapping("/attachments/{id}") public ResponseEntity<?> download(HttpServletRequest req,@PathVariable String id){var f=files.readable(id,auth.optional(req),auth.owner(req));return ResponseEntity.ok().contentType(MediaType.parseMediaType(str(f,"mime"))).header("Content-Disposition",ContentDisposition.attachment().filename(str(f,"filename"),java.nio.charset.StandardCharsets.UTF_8).build().toString()).body(new FileSystemResource(files.path(id)));}
     @GetMapping("/reports") public Object reports(HttpServletRequest req){return clues.reports(auth.user(req));}
     @GetMapping("/reports/{id}") public Object report(HttpServletRequest req,@PathVariable long id){return clues.report(auth.user(req),id);}
-    @PostMapping("/reports") public Object report(HttpServletRequest req,@RequestBody Map<String,Object> b){var user=auth.optional(req);limiter.consume("report-ip",req.getRemoteAddr(),120,60);if(user!=null)limiter.consume("report-user",Long.toString(user.id()),60,60);var result=clues.submit(user,auth.owner(req),b);try{clues.process(num(result,"id"));}catch(Exception e){clues.failure(num(result,"id"));result.put("processing","人工待研判");}return result;}
+    @PostMapping("/reports") public Object report(HttpServletRequest req,@RequestBody Map<String,Object> b){var user=auth.optional(req);limiter.consume("report-ip",req.getRemoteAddr(),120,60);if(user!=null)limiter.consume("report-user",Long.toString(user.id()),60,60);var result=clues.submit(user,auth.owner(req),b);try{clues.process(num(result,"id"));}catch(Exception e){log.error("report-processing-failed reportId={}",result.get("id"),e);clues.failure(num(result,"id"));result.put("processing","人工待研判");}return result;}
     @PostMapping("/reports/{id}/retry") public Object retry(HttpServletRequest req,@PathVariable long id){auth.user(req).roles("CENTER");clues.process(id);return map("ok",true);}
     @PostMapping("/anonymous/query") public Object anonymous(HttpServletRequest req,@RequestBody Map<String,Object> b){limiter.consume(req.getRemoteAddr());return clues.anonymous(b);}
     @PostMapping("/reports/{id}/query-token") public Object queryToken(HttpServletRequest req,@PathVariable long id,@RequestBody Map<String,Object> b){return clues.queryToken(auth.user(req),id,b);}

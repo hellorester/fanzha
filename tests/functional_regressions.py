@@ -15,7 +15,8 @@ def run():
         center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 1, 'communityId': 1, 'note': tag})
         tasks = center.call(f'/alerts/{aid}/dispatch', {'bankId': 1, 'amount': 1000}); cid = tasks['commandId']
         pay.call(f'/commands/{cid}/accept', {})
-        pay.call(f'/commands/{cid}/receipt', {'result': result, 'amount': amount, 'reason': tag, 'voucher': tag})
+        if result=='未处理': center.call(f'/commands/{cid}/simulate', {'node':'超时'})
+        else: pay.call(f'/commands/{cid}/receipt', {'result': result, 'amount': amount, 'reason': tag, 'voucher': tag})
         return aid, cid, tasks['visitId']
     def close(aid, vid):
         grid.call(f'/visits/{vid}/claim', {})
@@ -40,17 +41,82 @@ def run():
     require(center.call(f"/reports/{following['id']}")['alert_id'] != aid, '旧身份后续线索不会误归并到更正后的预警')
 
     # Reprocess in place: retain id/code/attachments, and never create a replacement report.
+    require(bool(os.environ.get('APP_LOG')), 'APP_LOG须指向本次测试实例的日志文件')
+    log_path=pathlib.Path(os.environ['APP_LOG']);log_start=log_path.stat().st_size
     file = center.file(); sql('RENAME TABLE af_score TO af_closure_score_guard')
     try: failed = report(attachments=[file])
     finally: sql('RENAME TABLE af_closure_score_guard TO af_score')
     before = center.call(f"/reports/{failed['id']}")
     require(before['processing']=='人工待研判' and before['alert_id'] is None, '规则异常留下可恢复的原举报')
+    with log_path.open('rb') as log_file:
+        log_file.seek(log_start);failure_log=log_file.read().decode('utf-8','replace')
+    marker=f"report-processing-failed reportId={failed['id']}"
+    require(marker in failure_log, '自动研判异常日志可按举报ID定位')
+    trace=failure_log.split(marker,1)[1]
+    require('Caused by:' in trace and 'at cn.course.antifraud.Clues.process(' in trace, '自动研判保留数据库原始异常及完整调用栈')
     public.call(f"/reports/{failed['id']}/retry", {}, expected=403)
     reviewer.call(f"/reports/{failed['id']}/retry", {})
     recovered = center.call(f"/reports/{failed['id']}")
     require(recovered['code']==failed['code'] and recovered['processing']=='已研判' and recovered['alert_id'] and recovered['attachments'][0]['id']==file, '中心恢复同一举报并保留受理编号及附件')
     reviewer.call(f"/reports/{failed['id']}/retry", {})
     require(sql(f"SELECT COUNT(*) FROM af_score WHERE report_id={failed['id']}")=='1', '重复恢复不会重复评分或新建举报')
+
+    # New freezes need the same current approval whether dispatched or retried.
+    for failed_state in ['拒绝执行','未处理']:
+        aid,cid,vid=prepared(failed_state,0)
+        original_state=center.call(f'/alerts/{aid}')['state']
+        review_id=int(sql(f'SELECT MAX(id) FROM af_assessment WHERE alert_id={aid}'))
+        for change,restore in [
+            (f"UPDATE af_assessment SET decision='重发复核' WHERE id={review_id}",f"UPDATE af_assessment SET decision='通过' WHERE id={review_id}"),
+            (f'UPDATE af_alert SET reviewed_by=NULL WHERE id={aid}',f'UPDATE af_alert SET reviewed_by=1 WHERE id={aid}'),
+            (f"UPDATE af_alert SET state='待研判' WHERE id={aid}",f'UPDATE af_alert SET state={quoted(original_state)} WHERE id={aid}')
+        ]:
+            sql(change)
+            try: center.call(f'/commands/{cid}/retry', {'note':tag},expected=409)
+            finally: sql(restore)
+        added=report(victimId=1)
+        require(center.call(f"/reports/{added['id']}")['alert_id']==aid, f'{failed_state}后新增举报归并到原预警')
+        pending=center.call(f'/commands/{cid}')
+        require(pending['alert_needs_review'] and not pending['freeze_review_ready'], '指令详情明确阻止尚待补充复核的止付重发')
+        before_count=sql(f'SELECT COUNT(*) FROM af_command WHERE alert_id={aid}')
+        center.call(f'/commands/{cid}/retry', {'note':tag},expected=409)
+        center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':1000},expected=409)
+        unchanged=center.call(f'/alerts/{aid}')
+        require(sql(f'SELECT COUNT(*) FROM af_command WHERE alert_id={aid}')==before_count and unchanged['state']==original_state and unchanged['needs_review'] and unchanged['visits'][0]['id']==vid, '拒绝重发不新增指令、不改预警状态、不替换任务或清除复核标志')
+        reviewer.call(f'/alerts/{aid}/review', {'decision':'驳回','note':tag})
+        center.call(f'/commands/{cid}/retry', {'note':tag},expected=409)
+        center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':1000},expected=409)
+        reviewer.call(f'/alerts/{aid}/review', {'decision':'通过','note':tag})
+        require(center.call(f'/commands/{cid}')['freeze_review_ready'], '补充复核通过后恢复新止付入口')
+        retried=center.call(f'/commands/{cid}/retry', {'note':tag})['id']
+        require(sql(f'SELECT retry_of FROM af_command WHERE id={retried}')==str(cid), '通过复核后可重发且保留原指令关系')
+        pay.call(f'/commands/{retried}/accept', {})
+        pay.call(f'/commands/{retried}/receipt', {'result':'拒绝执行','amount':0,'reason':tag,'voucher':tag})
+        center.call(f'/commands/{retried}/retry', {'note':tag})
+        require(center.call(f'/alerts/{aid}')['freeze_review_ready'], '重发操作记录不会替代或抹除有效人工复核')
+
+    # A pending supplemental clue must not block independent refunds/releases.
+    aid,cid,vid=prepared()
+    report(victimId=1)
+    require(center.call(f'/alerts/{aid}')['needs_review'], '后续资金业务在预警仍需补充复核时验收')
+    app=public.call('/applications', {'originalId':cid,'kind':'返还','amount':200,'payee':'6222000000000099','reason':tag,'attachments':[public.file()]})['id']
+    center.call(f'/applications/{app}/review', {'decision':'通过','amount':200,'note':tag})
+    refund=public.call(f'/applications/{app}')['commands'][0]['id']
+    pay.call(f'/commands/{refund}/accept', {})
+    pay.call(f'/commands/{refund}/receipt', {'result':'拒绝执行','amount':0,'reason':tag,'voucher':tag})
+    retried=center.call(f'/commands/{refund}/retry', {'note':tag})['id']
+    pay.call(f'/commands/{retried}/accept', {})
+    pay.call(f'/commands/{retried}/receipt', {'result':'全额执行','amount':200,'voucher':tag})
+    appeal=public.call('/applications', {'originalId':cid,'kind':'申诉','reason':tag})['id']
+    center.call(f'/applications/{appeal}/review', {'decision':'受理','note':tag})
+    center.call(f'/applications/{appeal}/review', {'decision':'成立','note':tag})
+    release=public.call(f'/applications/{appeal}')['commands'][0]['id']
+    pay.call(f'/commands/{release}/accept', {})
+    pay.call(f'/commands/{release}/receipt', {'result':'拒绝执行','amount':0,'reason':tag,'voucher':tag})
+    retried=center.call(f'/commands/{release}/retry', {'note':tag})['id']
+    pay.call(f'/commands/{retried}/accept', {})
+    pay.call(f'/commands/{retried}/receipt', {'result':'解除成功','amount':0,'voucher':tag})
+    require(center.call(f'/commands/{cid}')['state']=='已解除' and center.call(f'/alerts/{aid}')['needs_review'], '待补充复核不阻止返还、申诉、解除及其失败重发，也不被这些操作误清除')
 
     # A closed rejected freeze cannot reopen its alert; archived visits remain archived.
     aid, cid, vid = prepared('拒绝执行', 0); close(aid, vid)
