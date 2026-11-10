@@ -49,7 +49,15 @@ public class Support {
     public Map<String,Object> one(String sql,Object...args){var r=optional(sql,args);if(r==null)throw new Problem(404,"记录不存在或无权访问");return r;}
     public long count(String sql,Object...args){Long v=db.queryForObject(sql,Long.class,args);return v==null?0:v;}
     public long insert(String sql,Object...args){GeneratedKeyHolder h=new GeneratedKeyHolder();db.update(c->{PreparedStatement p=c.prepareStatement(sql,Statement.RETURN_GENERATED_KEYS);for(int i=0;i<args.length;i++)p.setObject(i+1,args[i]);return p;},h);return Objects.requireNonNull(h.getKey()).longValue();}
-    // Call inside the caller's transaction: identity -> alert -> commands -> funds/materials -> audit.
+    // Serialize account maintenance with submissions; reject a stale authenticated snapshot.
+    public void lockPublicIdentity(User u){
+        if(u==null||!u.role().equals("PUBLIC"))return;
+        var current=one("SELECT role,enabled,verified,victim_id FROM af_user WHERE id=? FOR UPDATE",u.id());
+        long person=num(current,"victim_id");
+        boolean verified=yes(current,"verified")&&person>0&&count("SELECT COUNT(*) FROM af_user WHERE role='PUBLIC' AND enabled=TRUE AND verified=TRUE AND victim_id=?",person)==1;
+        conflict(str(current,"role").equals("PUBLIC")&&yes(current,"enabled")&&verified==u.verified()&&(verified?person:0)==u.victimId(),"账号状态或实名身份刚刚更新，请刷新后重试");
+    }
+    // Call inside the caller's transaction: account -> identity -> alert -> commands -> funds/materials -> audit.
     public Map<String,Object> lockAlert(long id){return lockAlert(id,0);}
     public Map<String,Object> lockAlert(long id,long requestedVictim){
         var peek=one("SELECT victim_id FROM af_alert WHERE id=?",id);long previous=num(peek,"victim_id");

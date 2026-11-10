@@ -128,6 +128,15 @@ public class Migrations implements CommandLineRunner {
                         mark(9);
                     });
                 }
+                if(!applied(10))tx.executeWithoutResult(status->{
+                    // Earlier versions left exhausted freezes and their outstanding work open.
+                    // This changes workflow status only; completed decisions, balances and ledger stay intact.
+                    for(var c:s.rows("SELECT * FROM af_command WHERE kind='止付' AND state IN ('生效中','已延期') AND remaining=0 AND actual>0 AND returned=actual ORDER BY id FOR UPDATE")){
+                        Commands.finishFreeze(s,c,null,"升级核对：冻结资金已全部返还");
+                        s.log(null,"全额返还结束止付","command",num(c,"id"),str(c,"state"),"已解除","升级核对：结束待办，保留已完成的返还和审核记录，不改动资金账本");
+                    }
+                    mark(10);
+                });
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }

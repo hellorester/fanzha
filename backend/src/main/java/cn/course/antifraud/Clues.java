@@ -23,7 +23,7 @@ public class Clues {
     }
     public Map<String,Object> config(){var r=s.one("SELECT * FROM af_config ORDER BY id DESC LIMIT 1");var c=s.decode(str(r,"data"));c.put("version",r.get("id"));return c;}
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED) public Map<String,Object> submit(User u,String owner,Map<String,Object> b){
-        if(u!=null)u.roles("PUBLIC","CENTER");
+        if(u!=null)u.roles("PUBLIC","CENTER");s.lockPublicIdentity(u);
         boolean anon=u==null||yes(b,"anonymous")||u.role().equals("PUBLIC")&&!u.verified();
         String kind=required(b,"kind",20),value=required(b,"value",500),normalized=Rules.normalize(kind,value);required(b,"description",2000);String requestKey=required(b,"requestKey",80);
         // Serialize concurrent retries before looking for the committed response.

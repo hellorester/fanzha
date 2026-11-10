@@ -12,6 +12,16 @@ import static cn.course.antifraud.Support.*;
 
 class DeadlineTest {
     private final LocalDateTime base=LocalDateTime.of(2026,11,9,12,0);
+    @ParameterizedTest @ValueSource(ints={0,1,100})
+    void onlyRemainingFrozenFundsAllowFurtherApplications(int remaining){
+        for(String state:List.of("生效中","已延期")){
+            var command=map("kind","止付","state",state,"remaining",remaining,"expires_at",base.plusHours(1));
+            assertEquals(remaining>0,Commands.liveFreeze(command,base));
+            assertEquals(false,Commands.liveFreeze(command,base.plusHours(1)));
+            command.put("state","已解除");
+            assertEquals(false,Commands.liveFreeze(command,base));
+        }
+    }
     private Support support(JdbcTemplate db,Map<String,Object> command){
         return support(db,command,base);
     }

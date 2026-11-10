@@ -1,7 +1,8 @@
 """Restart-only test for legacy applications without bank ownership/payee evidence.
 
-Run after stopping the disposable HTTP instance. Existing valid v9 applications are
-kept alongside legacy rows to test a retry of the upgrade without erasing new work.
+Run after identity_regressions.py and account_application_regressions.py, then stop
+the disposable HTTP instance. Valid applications and completed refunds are kept
+alongside legacy rows to test versions 9 and 10 without erasing new work.
 """
 from test_db import *
 from integration import BASE, Client, require, results
@@ -63,6 +64,31 @@ try:
     counts=sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')
     stop();start()
     require(sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')==counts,'再次启动不重复失效、取消或追加迁移日志')
+    stop()
+    # Reconstruct the old fully-returned-but-still-live state using a real completed refund.
+    exhausted=int(sql("SELECT id FROM af_command WHERE kind='止付' AND state='已解除' AND actual>0 AND returned=actual AND remaining=0 ORDER BY id DESC LIMIT 1"))
+    sql(f"UPDATE af_command SET state='生效中',active_key=CONCAT(alert_id,':',bank_id),expires_at=DATE_ADD(NOW(),INTERVAL 1 DAY) WHERE id={exhausted}")
+    exhausted_apps=[]
+    for state in ['待受理','审核中','驳回待补','已生成解除指令']:
+        code=tag+'E'+str(len(exhausted_apps))
+        app=int(sql(f"INSERT INTO af_application(code,kind,owner_id,original_id,state,reason,note,applicant_person_id,created_at,updated_at) SELECT {quoted(code)},'申诉',u.id,c.id,{quoted(state)},'legacy exhausted freeze','保留耗尽前审核意见',b.owner_person_id,NOW(),NOW() FROM af_command c JOIN af_bank b ON b.id=c.bank_id JOIN af_user u ON u.victim_id=b.owner_person_id AND u.verified=TRUE AND u.enabled=TRUE WHERE c.id={exhausted};SELECT LAST_INSERT_ID()"))
+        exhausted_apps.append(app)
+    pending_release=int(sql(f"INSERT INTO af_command(code,kind,alert_id,original_id,application_id,bank_id,org_id,victim_id,state,active_key,created_at,accepted_at) SELECT {quoted(tag+'ER')},'解除',alert_id,id,{exhausted_apps[-1]},bank_id,org_id,victim_id,'受理中',CONCAT('application:',{exhausted_apps[-1]}),NOW(),NOW() FROM af_command WHERE id={exhausted};SELECT LAST_INSERT_ID()"))
+    money_before=sql('SELECT id,available FROM af_bank ORDER BY id')
+    ledger_before=sql('SELECT * FROM af_ledger ORDER BY id')
+    sql('DELETE FROM af_migration WHERE version=10')
+    start();center=Client('center')
+    require(sql('SELECT COUNT(*) FROM af_migration WHERE version=10')=='1','耗尽冻结的历史收尾登记版本10')
+    require(sql(f"SELECT state,remaining,reserved,active_key IS NULL FROM af_command WHERE id={exhausted}")=='已解除\t0.00\t0.00\t1','旧版全额返还后的原止付关闭并清除占用键')
+    require(sql(f"SELECT COUNT(*) FROM af_application WHERE id IN ({','.join(map(str,exhausted_apps[:-1]))}) AND state='已失效' AND note='保留耗尽前审核意见'")=='3','旧未决定申诉同步结束并保留审核意见')
+    require(sql(f"SELECT state FROM af_application WHERE id={exhausted_apps[-1]}")=='已生成解除指令'
+        and sql(f"SELECT state,active_key IS NULL FROM af_command WHERE id={pending_release}")=='已失效\t1','已经作出的裁定保留，仅结束未执行的解除指令')
+    require(sql('SELECT id,available FROM af_bank ORDER BY id')==money_before
+        and sql('SELECT * FROM af_ledger ORDER BY id')==ledger_before,'收尾升级不改变任何资金余额或历史账本')
+    require(center.call('/reconciliation')['ok'] and center.call('/audit/verify')['ok'],'耗尽冻结迁移后的资金及审计一致')
+    counts=sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')
+    stop();start()
+    require(sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')==counts,'耗尽冻结迁移重复启动不重复收尾或追加日志')
 except Exception as e:error=str(e)
 finally:stop()
 report={'status':'failed' if error else 'passed','steps':len(results),'error':error,'results':results}
