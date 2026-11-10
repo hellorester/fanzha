@@ -20,9 +20,10 @@ if sys.argv[1]=='prepare':
     sql("UPDATE af_blacklist SET value_hash=SHA2(CONCAT('legacy-blacklist-',id),256); ALTER TABLE af_blacklist ADD UNIQUE INDEX kind(kind,value_hash), ADD UNIQUE INDEX uq_review_source_id(source,id)")
     tables=sql("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE 'af_%' AND TABLE_NAME NOT IN ('af_migration','af_notice','af_upload_guard','af_query_limit') ORDER BY TABLE_NAME").splitlines()
     counts={table:int(sql('SELECT COUNT(*) FROM '+table)) for table in tables}
-    sql("UPDATE af_report SET value_hash=SHA2(CONCAT('legacy-report-',id),256); UPDATE af_bank SET number_hash=SHA2(CONCAT('legacy-bank-',id),256); DELETE FROM af_migration WHERE version IN (1,2,3,4,5,6)")
+    sql("UPDATE af_report SET value_hash=SHA2(CONCAT('legacy-report-',id),256); UPDATE af_bank SET number_hash=SHA2(CONCAT('legacy-bank-',id),256); DELETE FROM af_migration WHERE version IN (1,2,3,4,5,6,7)")
     # Remove only new columns to emulate the previous installed schema; existing business rows remain.
     sql('ALTER TABLE af_report DROP COLUMN request_owner_key, DROP COLUMN query_token_enc; ALTER TABLE af_alert DROP COLUMN score_config_id, DROP COLUMN score_blacklist_version; ALTER TABLE af_command DROP INDEX ix_command_retry, DROP COLUMN retry_of')
+    sql('ALTER TABLE af_log MODIFY COLUMN note VARCHAR(1000); ALTER TABLE af_correction DROP COLUMN base_receipt_id')
     openings=sql('SELECT bank_id,opening FROM af_bank_origin ORDER BY bank_id')
     sql('DELETE FROM af_bank_origin; DELETE FROM af_audit_head; ALTER TABLE af_log DROP COLUMN prev_hash, DROP COLUMN entry_hash')
     snapshot.write_text(json.dumps({'counts':counts,'openings':openings,'startedAt':time.time()}),encoding='utf-8')
@@ -32,6 +33,8 @@ else:
     require(all(int(sql('SELECT COUNT(*) FROM '+table))==count for table,count in before.items()),'升级不丢失任何业务记录')
     require(sql('SELECT COUNT(*) FROM af_migration WHERE version=6')=='1','旧库新增身份重试、评分版本及重发关系字段成功')
     require(sql("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND ((TABLE_NAME='af_report' AND COLUMN_NAME IN ('request_owner_key','query_token_enc')) OR (TABLE_NAME='af_alert' AND COLUMN_NAME IN ('score_config_id','score_blacklist_version')) OR (TABLE_NAME='af_command' AND COLUMN_NAME='retry_of'))")=='5','升级补齐全部新增字段')
+    require(sql("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='af_log' AND COLUMN_NAME='note'")=='text','旧库日志字段升级为TEXT且原记录保留')
+    require(sql('SELECT COUNT(*) FROM af_migration WHERE version=7')=='1','文字长度及回执快照升级已登记')
     expected=fingerprint('网址','legacy-migration.example/login')
     require(sql("SELECT COUNT(*) FROM af_blacklist WHERE source='migration-regression' AND value_hash="+quoted(expected))=='2','旧等价URL的两个来源均保留并重新建立统一指纹')
     require(sql("SELECT number_hash FROM af_bank WHERE id=1")==fingerprint('账户','6222000000000001'),'既有账户指纹迁移成功')

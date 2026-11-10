@@ -3,11 +3,12 @@ import {computed,reactive,ref,onMounted,onBeforeUnmount,useId} from 'vue'
 import {api} from '../api'
 import {createAttachmentDraft} from '../attachment-draft'
 import AppIcon from './AppIcon.vue'
-const props=defineProps({title:String,description:String,fields:Array,initial:Object,submit:Function,button:{default:'确认提交'}})
+const props=defineProps({title:String,description:String,fields:Array,initial:Object,summary:Function,submit:Function,button:{default:'确认提交'}})
 const emit=defineEmits(['close','done'])
 const data=reactive({...props.initial}),error=ref(''),busy=ref(false),uploads=reactive({}),dialog=ref(null),formId=useId()
 const draft=createAttachmentDraft(api)
 props.fields.forEach(f=>{if(data[f.key]===undefined)data[f.key]=f.default??(f.type==='checkbox'?false:f.type==='file'?[]:'')})
+const summaryItems=computed(()=>props.summary?.(data)||[])
 const groups=computed(()=>{
  const result=[]
  for(const field of props.fields){
@@ -68,6 +69,7 @@ async function send(){
    <form class="dialog-form" @submit.prevent="send">
     <div class="dialog-body">
      <p v-if="description" class="dialog-description"><AppIcon name="info" :size="16"/><span>{{description}}</span></p>
+     <dl v-if="summaryItems.length" class="form-summary"><div v-for="item in summaryItems" :key="item.label"><dt>{{item.label}}</dt><dd>{{item.value}}</dd></div></dl>
      <section v-for="(group,index) in groups" :key="index" class="form-section">
       <h3 v-if="group.title" class="form-section-title">{{group.title}}</h3>
       <div class="form-grid">

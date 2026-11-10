@@ -94,6 +94,7 @@ jobs:
           server_pid=$!
           python tests/wait_for_server.py
           python tests/migration_regression.py verify
+          python tests/functional_regressions.py
       - name: Preserve test reports
         if: always()
         uses: actions/upload-artifact@v4

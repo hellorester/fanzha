@@ -27,6 +27,7 @@ public class BusinessApi {
  @PostMapping("/applications/{id}/review") public Object adjudicate(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){commands.adjudicate(auth.user(r),id,b);return map("ok",true);}
  @GetMapping("/notices") public Object notices(HttpServletRequest r){return commands.notices(auth.user(r));}
  @PostMapping("/notices/{id}/resolve") public Object resolve(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){commands.resolveNotice(auth.user(r),id,b);return map("ok",true);}
+ @GetMapping("/corrections/{id}") public Object correctionDetail(HttpServletRequest r,@PathVariable long id){return commands.correction(auth.user(r),id);}
  @GetMapping("/corrections") public Object corrections(HttpServletRequest r){return commands.corrections(auth.user(r));}
  @PostMapping("/commands/{id}/correction") public Object correction(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){commands.requestCorrection(auth.user(r),id,b);return map("ok",true);}
  @PostMapping("/corrections/{id}/review") public Object correctionReview(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){commands.correct(auth.user(r),id,b);return map("ok",true);}

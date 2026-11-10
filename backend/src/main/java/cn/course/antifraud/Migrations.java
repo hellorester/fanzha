@@ -75,6 +75,11 @@ public class Migrations implements CommandLineRunner {
                     column("af_command","retry_of","BIGINT");index("af_command","ix_command_retry","retry_of");
                     mark(6);
                 }
+                if(!applied(7)){
+                    s.db.execute("ALTER TABLE af_log MODIFY COLUMN note TEXT");
+                    column("af_correction","base_receipt_id","BIGINT");
+                    mark(7);
+                }
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }
