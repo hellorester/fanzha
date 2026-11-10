@@ -17,6 +17,11 @@ public class Admin {
   String password=str(b,"password");if(id==0||!password.isEmpty())require(password.length()>=8&&password.length()<=100,"密码长度应为8至100位");
   if(id==0)id=s.insert("INSERT INTO af_user(username,password_hash,display_name,role,org_id,community_id,victim_id,enabled,verified,admin) VALUES(?,?,?,?,?,?,?,?,?,?)",username,password(password),display,role,role.equals("PAYMENT")?org:null,role.equals("GRID")?community:null,role.equals("PUBLIC")&&victim>0?victim:null,enabled,verified,admin);
   else{var previous=s.one("SELECT * FROM af_user WHERE id=? FOR UPDATE",id);
+   if(str(previous,"role").equals("PUBLIC")){
+    boolean identityChanged=!role.equals("PUBLIC")||num(previous,"victim_id")!=(verified?victim:0)||yes(previous,"verified")!=verified;
+    if(identityChanged)conflict(s.count("SELECT COUNT(*) FROM af_report WHERE owner_id=?",id)==0&&s.count("SELECT COUNT(*) FROM af_application WHERE owner_id=?",id)==0,"该群众账号已有举报或申请记录，不能直接更换实名身份；请保留原账号并为新人员另建账号");
+    if(yes(previous,"enabled")&&!enabled)conflict(s.count("SELECT COUNT(*) FROM af_application a WHERE a.owner_id=? AND (a.state IN ('待核定','待受理','审核中','驳回待补') OR EXISTS(SELECT 1 FROM af_command c WHERE c.application_id=a.id AND c.state IN ('待下发','已送达','受理中')))",id)==0,"该账号仍有未完成的返还或申诉，办结或明确处理后才能停用");
+   }
    if(str(previous,"role").equals("GRID")&&(!enabled||!role.equals("GRID")||community!=num(previous,"community_id")))conflict(s.count("SELECT COUNT(*) FROM af_visit WHERE assignee_id=? AND state IN ('待上门','劝阻中')",id)==0,"该网格员仍有未完成任务，请先改派待上门任务或完成已到场任务的回传");
    s.db.update("UPDATE af_user SET username=?,display_name=?,role=?,org_id=?,community_id=?,victim_id=?,enabled=?,verified=?,admin=? WHERE id=?",username,display,role,role.equals("PAYMENT")?org:null,role.equals("GRID")?community:null,role.equals("PUBLIC")&&victim>0?victim:null,enabled,verified,admin,id);if(!password.isEmpty())s.db.update("UPDATE af_user SET password_hash=? WHERE id=?",password(password),id);}
   s.log(u,"维护账号","account",id,null,enabled?"启用":"停用","账号及归属更新");return id;
