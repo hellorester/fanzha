@@ -2,7 +2,14 @@
 
 ## 启动
 
-本机已配置时，双击 **启动原型.cmd**，等到提示“原型已就绪”，在浏览器打开提示的地址，默认 <http://127.0.0.1:8088>。使用完双击 **停止原型.cmd**。重启后业务记录仍然保留。首次克隆请先完成下方的构建和本机配置。
+本机已配置并构建时，在项目根目录打开 Windows PowerShell，执行：
+
+```powershell
+. .\scripts\Env.ps1
+& $JavaCommand -jar .\backend\target\antifraud-1.0.0.jar
+```
+
+启动完成后打开 <http://127.0.0.1:8088>。服务在当前终端前台运行，用完按 `Ctrl+C` 停止；重启后业务记录仍然保留。首次克隆请先完成下方的构建和本机配置。
 
 | 角色 | 账号 |
 |---|---|
@@ -31,7 +38,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Prepare-Demo.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start-Demo.ps1
 ```
 
-再次输入独立库全名确认后，打开 `http://127.0.0.1:8090/`。恢复会覆盖该验证库中的项目演练数据，不影响日常业务库；这个库也供回归测试使用，请勿与测试同时运行。默认端口可在准备时用 `-Port` 指定。结束时运行 `scripts/Stop-Verify.ps1`；日常使用仍通过 `启动原型.cmd` 启动原业务库。
+再次输入独立库全名确认后，打开 `http://127.0.0.1:8090/`。恢复会覆盖该验证库中的项目演练数据，不影响日常业务库；这个库也供回归测试使用，请勿与测试同时运行。默认端口可在准备时用 `-Port` 指定。结束时运行 `scripts/Stop-Verify.ps1`；日常使用按本文开头的命令前台运行原业务库。
 
 此前版本于2026-11-10在本机 Windows PowerShell 5.1 实测准备、恢复及资金操作后的重复复位：9个账号、4个资金账户、评分0/49/79的三档线索恢复一致，各角色可登录；快照保留原应用密钥，日常业务库各项目表的校验值未改变。另从页面走通“拒绝执行→追加线索→补充复核→重发→机构执行→网格回传→中心办结”，资金与日志校验通过，验收后再次恢复初始快照。本机证据为 `tests/results/windows-demo-gate.json`、`ui-review-gate-acceptance.json` 及同目录截图；这属于Windows实机验收，不是Ubuntu CI执行了PowerShell脚本。
 
@@ -109,7 +116,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Configure.ps1 -Database fanzha_dev -Username fanzha_user -HostAddress 127.0.0.1 -Port 3306
-.\启动原型.cmd
+. .\scripts\Env.ps1
+& $JavaCommand -jar .\backend\target\antifraud-1.0.0.jar
 ```
 
 脚本在本机提示输入数据库密码；它只保存连接配置，不创建数据库或数据库用户。`-Port` 是MySQL端口，`-AppPort` 是网页端口，默认8088。应用首次启动会创建表和虚构基础资料。已有配置会拒绝覆盖；更改连接地址或端口可以编辑自己的 `.local/database.json` 后重启。不同电脑的库名、账号、密码和端口无需一致。
