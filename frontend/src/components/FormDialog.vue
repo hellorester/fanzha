@@ -68,7 +68,7 @@ async function send(){
    <header class="dialog-header"><h2 :id="formId+'-title'">{{title}}</h2><button type="button" class="icon-button" aria-label="关闭窗口" :disabled="busy" @click="close"><AppIcon name="close" :size="20"/></button></header>
    <form class="dialog-form" @submit.prevent="send">
     <div class="dialog-body">
-     <p v-if="description" class="dialog-description"><AppIcon name="info" :size="16"/><span>{{description}}</span></p>
+      <p v-if="description" class="dialog-description">{{description}}</p>
      <dl v-if="summaryItems.length" class="form-summary"><div v-for="item in summaryItems" :key="item.label"><dt>{{item.label}}</dt><dd>{{item.value}}</dd></div></dl>
      <section v-for="(group,index) in groups" :key="index" class="form-section">
       <h3 v-if="group.title" class="form-section-title">{{group.title}}</h3>
@@ -84,8 +84,7 @@ async function send(){
          <textarea v-if="item.field.type==='textarea'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="item.field.required" :maxlength="item.field.max||2000" :rows="item.field.rows||3" :placeholder="item.field.placeholder" :disabled="busy"></textarea>
          <select v-else-if="item.field.type==='select'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="item.field.required" :disabled="busy"><option value="" :disabled="item.field.required">{{item.field.required?'请选择':'请选择（可不选）'}}</option><option v-for="o in item.field.options" :key="o.value??o" :value="o.value??o" :disabled="o.disabled">{{o.label??o}}</option></select>
          <template v-else-if="item.field.type==='file'">
-          <label class="upload-control" :class="{disabled:busy}"><input :id="formId+'-'+item.key" type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.docx,.txt" :disabled="busy" @change="upload($event,item.field)"><span class="upload-button"><AppIcon name="upload" :size="16"/>{{busy?'正在处理…':'选择文件'}}</span><span class="upload-hint">支持多份材料，单个文件不超过 10 MB</span></label>
-          <small class="field-help">PNG、JPG、PDF、DOCX、TXT</small>
+          <label class="upload-control" :class="{disabled:busy}"><input :id="formId+'-'+item.key" type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.docx,.txt" :disabled="busy" @change="upload($event,item.field)"><span class="upload-button"><AppIcon name="upload" :size="16"/>{{busy?'正在处理…':'选择文件'}}</span><span class="upload-hint">PNG / JPG / PDF / DOCX / TXT · 单个不超过 10 MB</span></label>
           <div v-for="(file,i) in uploads[item.key]||[]" :key="file.id" class="upload-item"><AppIcon name="file" :size="16"/><span>{{file.filename}}</span><button type="button" class="icon-button" :aria-label="'移除 '+file.filename" :disabled="busy" @click="removeFile(item.field,i)"><AppIcon name="close" :size="16"/></button></div>
          </template>
          <div v-else class="input-wrap"><input :id="formId+'-'+item.key" v-model="data[item.key]" :type="item.field.type||'text'" :required="item.field.required" :step="item.field.step||'any'" :min="item.field.min" :max="item.field.max" :maxlength="item.field.maxlength||500" :placeholder="item.field.placeholder" :autocomplete="item.field.type==='password'?'new-password':'off'" :disabled="busy" :class="{'has-suffix':item.field.unit}"><span v-if="item.field.unit" class="input-suffix">{{item.field.unit}}</span></div>
@@ -96,7 +95,7 @@ async function send(){
      </section>
      <div v-if="error" class="error-box" role="alert"><AppIcon name="alert" :size="16"/>{{error}}</div>
     </div>
-    <footer class="dialog-footer"><span class="required-note"><span class="required-mark">*</span> 为必填项</span><div><button type="button" :disabled="busy" @click="close">取消</button><button type="submit" class="primary" :disabled="busy">{{busy?'正在处理…':button}}</button></div></footer>
+    <footer class="dialog-footer"><div><button type="button" :disabled="busy" @click="close">取消</button><button type="submit" class="primary" :disabled="busy">{{busy?'正在处理…':button}}</button></div></footer>
    </form>
   </section>
  </div>

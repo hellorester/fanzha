@@ -56,7 +56,7 @@ onBeforeUnmount(()=>clearTimeout(queryTimer))
     <footer><span>申请状态 <strong>{{fmt(r.state)}}</strong></span><button v-if="selectable" class="text-button row-action" @click="emit('select',r)">查看办理详情<AppIcon name="chevron" :size="14"/></button></footer>
    </article>
   </div>
-  <div v-if="!visible.length" class="empty"><div class="empty-symbol"><AppIcon name="inbox" :size="30"/></div><strong>{{search||status||activeCount?'没有匹配的记录':empty}}</strong><p>{{search||status||activeCount?'尝试调整搜索关键词或筛选条件。':'完成业务办理后，记录将显示在这里。'}}</p><button v-if="search||status||activeCount" class="small" @click="reset">清除筛选</button></div>
+  <div v-if="!visible.length" class="empty"><div class="empty-symbol"><AppIcon name="inbox" :size="30"/></div><strong>{{search||status||activeCount?'没有匹配的记录':empty}}</strong><button v-if="search||status||activeCount" class="small" @click="reset">清除筛选</button></div>
  </div>
  <div class="pagination"><span>{{total?'显示 '+((page-1)*10+1)+'–'+Math.min(page*10,total)+' 条':'共 0 条'}}<span class="pagination-size">每页 10 条</span></span><div><button class="icon-button page-button previous-page" aria-label="上一页" :disabled="page<=1" @click="page--"><AppIcon name="chevron" :size="16"/></button><span class="page-number">{{page}}<span>/ {{pages}}</span></span><button class="icon-button page-button" aria-label="下一页" :disabled="page>=pages" @click="page++"><AppIcon name="chevron" :size="16"/></button></div></div>
 </template>

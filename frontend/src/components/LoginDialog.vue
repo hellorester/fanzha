@@ -23,8 +23,8 @@ function keys(e){if(e.key==='Escape'&&!props.busy)emit('close');if(e.key==='Tab'
     <div v-if="error" class="error-box" role="alert">{{error}}</div>
     <button type="submit" class="primary account-submit" :disabled="busy">{{busy?'正在登录…':'登录'}}</button>
    </form>
-   <div v-if="identity==='PUBLIC'" class="login-quick public-account-quick"><span>演示群众账号</span><button class="text-button" :disabled="busy" @click="$emit('account','public1')">居民一</button><button class="text-button" :disabled="busy" @click="$emit('account','public2')">居民二</button><button class="text-button" :disabled="busy" @click="$emit('account','public3')">居民三</button></div>
-   <div v-else class="login-quick"><span>{{selected.label}}</span><button class="text-button" :disabled="busy" @click="$emit('account',selected.account)">填入快捷账号<AppIcon name="arrow" :size="14"/></button></div>
+   <div v-if="identity==='PUBLIC'" class="login-quick public-account-quick"><span>快捷账号</span><button class="text-button" :disabled="busy" @click="$emit('account','public1')">居民一</button><button class="text-button" :disabled="busy" @click="$emit('account','public2')">居民二</button><button class="text-button" :disabled="busy" @click="$emit('account','public3')">居民三</button></div>
+   <div v-else class="login-quick"><span>快捷账号</span><button class="text-button" :disabled="busy" @click="$emit('account',selected.account)">{{selected.label}}<AppIcon name="arrow" :size="14"/></button></div>
   </section>
  </div>
 </template>

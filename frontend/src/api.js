@@ -10,7 +10,8 @@ export async function api(path,body,method){
 export async function boot(){const data=await api('/session');session.user=data.user;session.ready=true;return data}
 export const fmt=(v)=>v==null||v===''?'—':typeof v==='boolean'?(v?'是':'否'):typeof v==='number'?new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(v):String(v).replace(/^(\d{4}-\d{2}-\d{2})T/,'$1 ')
 export const money=(v)=>new Intl.NumberFormat('zh-CN',{style:'currency',currency:'CNY'}).format(Number(v||0))
-export const businessName=v=>String(v??'').replace(/^演示居民(?=[一二三\d])/,'居民').replace(/^账户持有人(?=[一二三\d])/,'居民').replace(/^模拟账户(?=\d)/,'账户').replace(/（模拟）$/,'').replace(/^模拟监测$/,'监测线索')
+const presentationNames={'演示居民1':'居民一','演示居民2':'居民二','演示居民3':'居民三','模拟资金操作':'资金操作','使用离线模拟坐标':'手动录入坐标','创建虚拟演示资料与默认配置':'初始化基础资料与默认配置'}
+export const businessName=v=>{const text=String(v??'');return presentationNames[text]||text.replace(/^演示居民(?=[一二三])/,'居民').replace(/^账户持有人(?=[一二三\d])/,'居民').replace(/^模拟账户(?=\d)/,'账户').replace(/（模拟）$/,'').replace(/^模拟监测$/,'监测线索').replace(/^课程模拟(?=风险)/,'').replace(/^演示时钟：/,'时效检查：')}
 export const localTime=()=>{let d=new Date();return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,19)}
 export const roleNames={CENTER:'反诈中心',PUBLIC:'群众服务',PAYMENT:'支付机构',GRID:'网格劝阻'}
 const fundsProgressTones={

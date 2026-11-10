@@ -15,7 +15,7 @@ public class Api {
     private static final Logger log=LoggerFactory.getLogger(Api.class);
     private final Support s;private final Auth auth;private final Clues clues;private final Files files;private final QueryLimiter limiter;
     public Api(Support s,Auth auth,Clues clues,Files files,QueryLimiter limiter){this.s=s;this.auth=auth;this.clues=clues;this.files=files;this.limiter=limiter;}
-    @GetMapping("/session") public Object session(HttpServletRequest req){return map("user",auth.optional(req),"csrf",auth.token(req.getSession()),"now",s.now(),"mode","课程模拟演示");}
+    @GetMapping("/session") public Object session(HttpServletRequest req){return map("user",auth.optional(req),"csrf",auth.token(req.getSession()),"now",s.now());}
     @PostMapping("/login") public Object login(HttpServletRequest req,@RequestBody Map<String,Object> b){return auth.login(req,b);}
     @PostMapping("/logout") public Object logout(HttpServletRequest req){req.getSession().invalidate();return map("ok",true);}
     @PostMapping("/attachments") public Object upload(HttpServletRequest req,@RequestParam("file") MultipartFile file)throws Exception{limiter.consume("upload-ip",req.getRemoteAddr(),120,60);return files.upload(file,auth.optional(req),auth.owner(req));}
