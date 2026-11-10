@@ -123,6 +123,7 @@ code,.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;letter-
 .metric-card>strong small{color:#8b96aa;font-size:12px;font-weight:400;letter-spacing:0;margin-left:7px}
 .dashboard-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.85fr);gap:16px;margin-bottom:18px}
 .dashboard-grid.single{grid-template-columns:1fr}
+.dashboard-grid.single .bar-chart{height:250px}
 .panel-meta{font-size:11px;color:#94a0b1}
 .bar-chart{height:196px;display:flex;align-items:flex-end;gap:8px;padding:20px 22px;overflow:hidden;background:repeating-linear-gradient(to top,transparent 0,transparent 43px,#edf1f6 44px)}
 .bar-column{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:24px;flex:1;height:100%;gap:7px;font-variant-numeric:tabular-nums}

@@ -1,18 +1,19 @@
 <script setup>
 import {ref} from 'vue'
 import {api,fmt,money} from '../api'
-const props=defineProps({kind:{type:String,required:true}})
+const props=defineProps({kind:{type:String,required:true},showHeader:{type:Boolean,default:true}})
 const result=ref(null),busy=ref(false),error=ref('')
 async function run(){
  busy.value=true;error.value='';result.value=null
  try{result.value=await api(props.kind==='funds'?'/reconciliation':'/audit/verify')}
  catch(e){error.value=e.message}finally{busy.value=false}
 }
+defineExpose({run,busy})
 </script>
 
 <template>
- <section class="integrity-panel">
-  <div class="panel-heading"><h3>{{kind==='funds'?'资金一致性核验':'日志完整性核验'}}</h3><button :disabled="busy" @click="run">{{busy?'正在核验…':kind==='funds'?'资金对账':'校验日志'}}</button></div>
+ <section class="integrity-panel" :class="{compact:!showHeader,empty:!showHeader&&!busy&&!error&&!result}">
+  <div v-if="showHeader" class="panel-heading"><h3>{{kind==='funds'?'资金一致性核验':'日志完整性核验'}}</h3><button :disabled="busy" @click="run">{{busy?'正在核验…':kind==='funds'?'资金对账':'校验日志'}}</button></div>
   <p v-if="error" class="error-box" role="alert">{{error}}</p>
   <template v-if="result">
    <div class="integrity-result" role="status"><span class="badge" :class="result.ok?'green':'red'">{{result.ok?'核验通过':'发现差异'}}</span><span>{{kind==='funds'?`${result.accounts.length} 个账户 · ${result.issueCount} 项差异`:result.message+' · '+result.checked+' 条记录'}}</span><time>本次校验 {{fmt(result.checkedAt)}}</time></div>
@@ -28,6 +29,8 @@ async function run(){
 
 <style scoped>
 .integrity-panel{border-bottom:1px solid var(--border,#e4e8ef);padding:0 22px 18px}
+.integrity-panel.empty{display:none}
+.integrity-panel.compact{padding-top:10px}
 .panel-heading{padding:18px 0 8px;margin:0}.panel-heading h3{font-size:14px}
 .integrity-result{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 16px;font-size:13px}.integrity-result time{margin-left:auto;color:#64748b}
 .integrity-baseline{font-size:12px;color:#64748b;margin-top:12px}
