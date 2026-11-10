@@ -25,10 +25,11 @@ def run():
     person=center.call('/people',{'name':tag,'phone':'13987650000','identity':tag,'communityId':2,'note':'现场核对实名资料'})['id']
     new_person=person
     username='no_bank_'+uuid.uuid4().hex[:8]
-    center.call('/users',{'username':username,'password':'Demo2026!','displayName':tag,'role':'PUBLIC','victimId':person,'verified':True,'enabled':True})
+    user_id=center.call('/users',{'username':username,'password':'Demo2026!','displayName':tag,'role':'PUBLIC','victimId':person,'verified':True,'enabled':True})['id']
     unbanked=Client(username)
     require(unbanked.call('/banks')==[] and unbanked.call('/list/banks')['total']==0,'没有绑卡的实名群众仍可登录，账户列表为空')
     r=report(unbanked,relation='本人受损');aid=center.call(f"/reports/{r['id']}")['alert_id']
+    center.call(f'/users/{user_id}',{'username':username,'displayName':tag,'role':'PUBLIC','victimId':1,'verified':True,'enabled':True,'admin':False,'password':''},expected=409)
     require(sql(f"SELECT victim_id FROM af_report WHERE id={r['id']}")==str(person),'明确本人受损时只使用已核验身份，不接受伪造victimId')
     approve(aid,person)
     require(not center.call(f'/alerts/{aid}')['targets'],'手机号不自动转换成资金账户')
@@ -60,6 +61,7 @@ def run():
     require(center.call(f'/alerts/{aid}')['needs_review'],'新核验的资金目标须重新人工复核')
     approve(aid);task=center.call(f'/alerts/{aid}/dispatch',{'bankId':1,'amount':100});cid=task['commandId']
     center.call(f'/alerts/{aid}/accounts/1/remove',{'note':'已派发后不能抹掉证据链'},expected=409)
+    center.call(f'/alerts/{aid}/accounts',{'reportId':r['id'],'bankId':1,'note':'尝试覆盖已派发止付的原始证据依据'},expected=409)
     execute(cid)
     reporter.call(f'/commands/{cid}',expected=404)
     victim.call(f"/reports/{r['id']}",expected=404)
@@ -68,6 +70,7 @@ def run():
     victim.call('/attachments/'+evidence,expected=404);holder.call('/attachments/'+evidence,expected=404)
     v=victim.call(f'/commands/{cid}');h=holder.call(f'/commands/{cid}')
     require(v['refund_eligible'] and not v['appeal_eligible'] and h['appeal_eligible'] and not h['refund_eligible'],'返还权来自受害人，申诉权来自被冻结账户户主')
+    require(v['bank']['holder']!=h['bank']['holder'] and h['bank']['holder']=='演示居民3','非户主受害人看到脱敏户主姓名，户主本人看到完整姓名')
     for c,field in [(victim,'refund_eligible'),(holder,'appeal_eligible')]:
         require(any(x['id']==cid and x[field] for x in c.call('/list/commands')['items']),'分页列表和详情保持一致的身份权限')
     require(not any('note' in t for t in h['timeline']) and 'victim_id' not in h,'户主不读取受害人身份字段及内部审核说明')
@@ -102,6 +105,8 @@ def run():
     require(sorted(statuses)==[200,409] and float(sql('SELECT available FROM af_bank WHERE id=4'))==float(before)+30,'并发返还回执只入账一次')
     require(sql(f"SELECT COUNT(*) FROM af_ledger WHERE command_id={child} AND bank_id=4 AND action='返还入账'")=='1','收款流水保存实际收款账户及原指令')
     appeal=holder.call('/applications',{'kind':'申诉','originalId':cid,'reason':tag,'attachments':[holder.file()]})['id']
+    holder_id=int(sql("SELECT id FROM af_user WHERE username='public3'"))
+    center.call(f'/users/{holder_id}',{'username':'public3','displayName':'账户持有人三','role':'PUBLIC','victimId':3,'verified':True,'enabled':False,'admin':False,'password':''},expected=409)
     application=holder.call(f'/applications/{appeal}')
     require(application['applicant_name']=='演示居民3' and application['payee'] is None,'申诉详情显示被冻结账户户主，不冒用返还收款字段')
     victim.call(f'/applications/{appeal}',expected=404)
@@ -109,6 +114,28 @@ def run():
     release=holder.call(f'/applications/{appeal}')['commands'][0]['id'];victim.call(f'/commands/{release}',expected=404)
     pay.call(f'/commands/{release}/accept',{});pay.call(f'/commands/{release}/receipt',{'result':'解除成功','amount':0,'voucher':tag})
     require(float(sql('SELECT available FROM af_bank WHERE id=4'))==float(before)+30 and holder.call(f'/commands/{cid}')['state']=='已解除','户主申诉解除剩余冻结，不撤销已完成的受害人返还')
+
+    # A fully returned freeze is no longer eligible for another refund or an appeal.
+    fullReport=report(reporter,'网址','https://identity-risk.example/full-refund?case='+tag,'代他人举报')
+    fullAid=center.call(f"/reports/{fullReport['id']}")['alert_id']
+    center.call(f'/alerts/{fullAid}/accounts',{'reportId':fullReport['id'],'bankId':1,'note':'核对全额返还测试的资金账户关系'})
+    approve(fullAid);fullCid=center.call(f'/alerts/{fullAid}/dispatch',{'bankId':1,'amount':50})['commandId'];execute(fullCid,50)
+    fullApp,fullChild=refund(victim,fullCid,4,50);execute(fullChild,50)
+    fullVictim=victim.call(f'/commands/{fullCid}');fullHolder=holder.call(f'/commands/{fullCid}')
+    require(float(sql(f'SELECT remaining FROM af_command WHERE id={fullCid}'))==0 and not fullVictim['refund_eligible'] and not fullHolder['appeal_eligible'],'全部返还后受害人和户主均不再具备申请资格')
+    victim.call('/applications',{'kind':'返还','originalId':fullCid,'payeeBankId':4,'amount':1,'reason':tag},expected=409)
+    holder.call('/applications',{'kind':'申诉','originalId':fullCid,'reason':tag},expected=409)
+
+    # A final "maintained" appeal cannot be submitted repeatedly for the same live freeze.
+    appealReport=report(reporter,'网址','https://identity-risk.example/maintained-appeal?case='+tag,'代他人举报')
+    appealAid=center.call(f"/reports/{appealReport['id']}")['alert_id']
+    center.call(f'/alerts/{appealAid}/accounts',{'reportId':appealReport['id'],'bankId':2,'note':'核对维持申诉测试的资金账户关系'})
+    approve(appealAid);appealCid=center.call(f'/alerts/{appealAid}/dispatch',{'bankId':2,'amount':40})['commandId']
+    pay2=Client('pay2');pay2.call(f'/commands/{appealCid}/accept',{});pay2.call(f'/commands/{appealCid}/receipt',{'result':'全额执行','amount':40,'voucher':tag})
+    maintained=holder.call('/applications',{'kind':'申诉','originalId':appealCid,'reason':tag})['id']
+    center.call(f'/applications/{maintained}/review',{'decision':'受理','note':tag})
+    center.call(f'/applications/{maintained}/review',{'decision':'维持','note':tag})
+    holder.call('/applications',{'kind':'申诉','originalId':appealCid,'reason':'重复提交相同申诉','attachments':[]},expected=409)
 
     # Opposite transfers must use the same bank locking order, not source-first ordering.
     pairs=[]
