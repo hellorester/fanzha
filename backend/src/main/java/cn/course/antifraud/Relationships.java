@@ -73,7 +73,14 @@ public class Relationships {
         u.roles("CENTER");var a=s.lockAlert(alertId);conflict(!Set.of("已闭环","已驳回","已作废").contains(str(a,"state")),"已结束预警不能变更账户关联");
         long bank=num(b,"bankId"),report=num(b,"reportId");String note=required(b,"note",1000);require(note.length()>=6,"请填写至少6字的账户关联核验依据");
         s.one("SELECT id FROM af_report WHERE id=? AND alert_id=?",report,alertId);s.one("SELECT id FROM af_bank WHERE id=?",bank);
-        s.db.update("INSERT INTO af_alert_bank(alert_id,bank_id,report_id,basis,actor_id,verified_at) VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE report_id=VALUES(report_id),basis=VALUES(basis),actor_id=VALUES(actor_id),verified_at=VALUES(verified_at)",alertId,bank,report,note,u.id(),s.now());
+        var existing=s.optional("SELECT * FROM af_alert_bank WHERE alert_id=? AND bank_id=? FOR UPDATE",alertId,bank);
+        if(existing!=null){
+            boolean unchanged=num(existing,"report_id")==report&&str(existing,"basis").equals(note);
+            if(!unchanged){
+                conflict(s.count("SELECT COUNT(*) FROM af_command WHERE alert_id=? AND bank_id=?",alertId,bank)==0,"该账户关联已用于指令，不能覆盖原始证据关系");
+                s.db.update("UPDATE af_alert_bank SET report_id=?,basis=?,actor_id=?,verified_at=? WHERE alert_id=? AND bank_id=?",report,note,u.id(),s.now(),alertId,bank);
+            }else return;
+        }else s.db.update("INSERT INTO af_alert_bank(alert_id,bank_id,report_id,basis,actor_id,verified_at) VALUES(?,?,?,?,?,?)",alertId,bank,report,note,u.id(),s.now());
         // A changed evidence/target relationship requires a fresh human approval before issuing funds commands.
         s.db.update("UPDATE af_alert SET needs_review=TRUE,updated_at=? WHERE id=?",s.now(),alertId);
         s.log(u,"核验线索账户关联","alert",alertId,null,null,"举报 #"+report+" → 资金账户 #"+bank+"；"+note);
