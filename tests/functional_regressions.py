@@ -1,6 +1,8 @@
 """Course completion rules, long review text, recovery and historical receipt comparisons."""
 from integration import *
 from test_db import sql, VERIFY, quoted
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 
 def run():
@@ -88,12 +90,46 @@ def run():
         center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':1000},expected=409)
         reviewer.call(f'/alerts/{aid}/review', {'decision':'通过','note':tag})
         require(center.call(f'/commands/{cid}')['freeze_review_ready'], '补充复核通过后恢复新止付入口')
+        blocked=center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':1000},expected=409)
+        require('复核重发' in json.dumps(blocked,ensure_ascii=False) and sql(f'SELECT COUNT(*) FROM af_command WHERE alert_id={aid}')==before_count, f'{failed_state}即使已通过复核，也不能用普通派发绕过重发链')
+        history=center.call(f'/alerts/{aid}')['commands']
+        require(history[0]['bank_id']==1 and not history[0]['dispatch_reusable'], '预警详情向页面标明失败指令的账户及不可普通复用状态')
+        for bank in [2,3]:
+            fresh=center.call(f'/alerts/{aid}/dispatch', {'bankId':bank,'amount':100})
+            reused=center.call(f'/alerts/{aid}/dispatch', {'bankId':bank,'amount':200})
+            require(not fresh['reused'] and fresh['visitId']==vid and reused['reused'] and fresh['commandId']==reused['commandId'], '其他机构或同机构的不同账户可新派发，重复提交复用指令及原网格任务')
         retried=center.call(f'/commands/{cid}/retry', {'note':tag})['id']
         require(sql(f'SELECT retry_of FROM af_command WHERE id={retried}')==str(cid), '通过复核后可重发且保留原指令关系')
+        reused=center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':500})
+        require(reused['reused'] and reused['commandId']==retried and reused['visitId']==vid and sql(f'SELECT requested FROM af_command WHERE id={retried}')=='1000.00', '存在有效重发指令时普通派发只复用最新指令，不新建或改写金额')
         pay.call(f'/commands/{retried}/accept', {})
         pay.call(f'/commands/{retried}/receipt', {'result':'拒绝执行','amount':0,'reason':tag,'voucher':tag})
+        blocked=center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':1000},expected=409)
+        require(sql(f'SELECT code FROM af_command WHERE id={retried}') in json.dumps(blocked,ensure_ascii=False), '再次失败时提示进入最近一条失败指令，不退回早期记录')
         center.call(f'/commands/{retried}/retry', {'note':tag})
         require(center.call(f'/alerts/{aid}')['freeze_review_ready'], '重发操作记录不会替代或抹除有效人工复核')
+
+    # A refused correction also clears the active slot; keep its original retry chain.
+    aid,cid,vid=prepared()
+    pay.call(f'/commands/{cid}/correction', {'result':'拒绝执行','amount':0,'reason':tag})
+    correction=next(x['id'] for x in center.call('/corrections') if x['command_id']==cid)
+    center.call(f'/corrections/{correction}/review', {'approve':True,'note':tag})
+    center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':1000},expected=409)
+    # Overlap ordinary dispatch and explicit retry with separate logged-in sessions.
+    start=Barrier(2)
+    def competing(client,path,body):
+        start.wait(timeout=5)
+        try: return 200,client.call(path,body)
+        except AssertionError as error:
+            if 'received 409' in str(error): return 409,None
+            raise
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        dispatch=pool.submit(competing,center,f'/alerts/{aid}/dispatch',{'bankId':1,'amount':2000})
+        retry=pool.submit(competing,reviewer,f'/commands/{cid}/retry',{'note':tag})
+        dispatch_status,dispatch_result=dispatch.result();retry_status,retry_result=retry.result()
+    new_id=retry_result['id']
+    require(retry_status==200 and (dispatch_status==409 or dispatch_result['reused'] and dispatch_result['commandId']==new_id), '普通派发与复核重发并发时，只允许拒绝普通派发或复用重发结果')
+    require(sql(f"SELECT COUNT(*) FROM af_command WHERE alert_id={aid} AND kind='止付'")=='2' and sql(f'SELECT retry_of FROM af_command WHERE id={new_id}')==str(cid) and sql(f'SELECT COUNT(*) FROM af_visit WHERE alert_id={aid}')=='1', '并发后只有原指令及一条关联重发，网格任务不重复')
 
     # A pending supplemental clue must not block independent refunds/releases.
     aid,cid,vid=prepared()
@@ -117,6 +153,9 @@ def run():
     pay.call(f'/commands/{retried}/accept', {})
     pay.call(f'/commands/{retried}/receipt', {'result':'解除成功','amount':0,'voucher':tag})
     require(center.call(f'/commands/{cid}')['state']=='已解除' and center.call(f'/alerts/{aid}')['needs_review'], '待补充复核不阻止返还、申诉、解除及其失败重发，也不被这些操作误清除')
+    reviewer.call(f'/alerts/{aid}/review', {'decision':'通过','note':tag})
+    center.call(f'/alerts/{aid}/dispatch', {'bankId':1,'amount':1000},expected=409)
+    require(sql(f"SELECT COUNT(*) FROM af_command WHERE alert_id={aid} AND kind='止付'")=='1', '已解除的历史止付也不会被普通派发当作首次派发重新创建')
 
     # A closed rejected freeze cannot reopen its alert; archived visits remain archived.
     aid, cid, vid = prepared('拒绝执行', 0); close(aid, vid)

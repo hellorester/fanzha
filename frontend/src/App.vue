@@ -9,6 +9,7 @@ import PublicPortal from './components/PublicPortal.vue'
 import KnowledgeList from './components/KnowledgeList.vue'
 import LoginDialog from './components/LoginDialog.vue'
 import {createDetailLoader} from './detail-loader'
+import {dispatchTargets} from './dispatch-targets'
 import {articleArt} from './article-art'
 import {articleCategories,articleCategory} from './article-categories'
 const page=ref(location.hash.slice(1)||'dashboard'),busy=ref(false),error=ref(''),toast=ref(''),rows=ref([]),stats=ref({metrics:[],daily:[],risks:[]}),meta=ref({}),modal=ref(null),detail=ref(null),mobile=ref(false),receiptResult=ref(null),loginBusy=ref(false)
@@ -121,7 +122,7 @@ function reportForm(){
  ],'/reports',{kind:'号码',anonymous:!isCenter.value&&!user.value?.verified,requestKey:crypto.randomUUID()},'请填写已知信息；不确定的交易情况可以留空。')
 }
 function reviewForm(a){form('人工复核',[f('decision','复核结论','select',{options:['通过','驳回'],required:true}),f('level','确认风险等级','select',{options:['高','中','低'],required:true}),f('victimId','核验后的受害人','select',{options:option(meta.value.victims)}),f('communityId','派发社区','select',{options:option(meta.value.communities)}),note()],`/alerts/${a.id}/review`,{decision:'通过',level:a.level,victimId:a.victim_id||'',communityId:a.community_id||''},'派发前更正受害人会同步更新关联举报并保留日志；派发后不能修改归属。')}
-function dispatchForm(a){form('联动派发',[f('bankId','目标账户','select',{required:true,options:(meta.value.banks||[]).map(b=>({value:b.id,label:businessName(b.org_name)+' · '+b.account+' · '+businessName(b.holder)}))}),f('amount','申请止付金额','number',{min:.01,step:.01,help:'未知时可留空，由机构独立核查。'})],`/alerts/${a.id}/dispatch`,{},'同时生成或复用止付指令与上门任务。重复提交会返回已有单号。')}
+function dispatchForm(a){form('联动派发',[f('bankId','目标账户','select',{required:true,wide:true,options:dispatchTargets(meta.value.banks||[],a.commands).map(b=>({value:b.id,label:businessName(b.org_name)+' · '+b.account+' · '+businessName(b.holder)+' · '+b.dispatchLabel,disabled:b.disabled})),help:'失败账户请从预警的关联指令进入“复核重发”。'}),f('amount','申请止付金额','number',{min:.01,step:.01,help:'新派发时填写，可留空由机构核查；复用保留原指令金额。'})],`/alerts/${a.id}/dispatch`,{},'未派发过的账户可新建止付；进行中的指令复用原单号，上门任务保持不变。')}
 function receiptForm(c){form('提交'+c.kind+'回执',[f('result','核查结果','select',{required:true,options:c.kind==='解除'?['解除成功','拒绝执行']:['全额执行','部分执行','拒绝执行']}),...(c.kind==='解除'?[]:[f('amount','实际执行金额','number',{min:0,step:.01,required:true})]),f('reason','执行说明或原因','textarea',{max:1000,help:c.kind==='解除'?'拒绝解除时必须填写原因。':'部分执行与拒绝执行必须填写原因；拒绝时金额为0。'}),f('voucher','凭证编号','text',{required:true}),attachment()],`/commands/${c.id}/receipt`,{result:c.kind==='解除'?'解除成功':'全额执行',amount:c.kind==='解除'?0:c.requested??'',voucher:'RCP-'+Date.now()},'提交后更新指令执行结果与账户余额。')}
 function fundSummary(c){return c?[{label:'剩余冻结',value:money(c.remaining)},{label:'待执行占用',value:money(c.reserved)},{label:'当前可核定',value:money(Number(c.remaining)-Number(c.reserved))}]:[]}
 async function applicationForm(kind){
