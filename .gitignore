@@ -1,4 +1,6 @@
 .local/
+/config/application.properties
+/config/application-*.properties
 backend/target/
 backend/src/main/resources/static/
 frontend/node_modules/

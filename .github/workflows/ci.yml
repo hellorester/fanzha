@@ -64,8 +64,6 @@ jobs:
           npm run build
       - name: Backend tests and full application package
         run: |
-          mkdir -p backend/src/main/resources/static
-          cp -R frontend/dist/. backend/src/main/resources/static/
           mvn -B -f backend/pom.xml verify
       - name: Prepare disposable test environment
         run: |

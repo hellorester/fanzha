@@ -2,14 +2,13 @@
 
 ## 启动
 
-本机已配置并构建时，在项目根目录打开 Windows PowerShell，执行：
+本机配置和运行包已准备好时，在项目根目录打开终端，执行：
 
 ```powershell
-. .\scripts\Env.ps1
-& $JavaCommand -jar .\backend\target\antifraud-1.0.0.jar
+java -jar .\backend\target\antifraud-1.0.0.jar
 ```
 
-启动完成后打开 <http://127.0.0.1:8088>。服务在当前终端前台运行，用完按 `Ctrl+C` 停止；重启后业务记录仍然保留。首次克隆请先完成下方的构建和本机配置。
+启动完成后打开 <http://127.0.0.1:8088>。服务在当前终端前台运行，用完按 `Ctrl+C` 停止；重启后业务记录仍然保留。Spring Boot 自动读取项目根目录下的 `config/application.properties`。首次克隆请先完成下方的本机配置和构建。
 
 | 角色 | 账号 |
 |---|---|
@@ -22,29 +21,11 @@
 
 统一演示密码：**`Demo2026!`**。它与数据库密码无关。登录时先选择群众用户、反诈中心、支付机构或社区网格，所选身份须与账号一致。更换角色先退出登录；同一浏览器普通标签页共享会话。
 
-## 可重复的演示起点
+## 演示数据
 
-首次准备时，先建立并授权名为“本机业务库名_verify”的独立库，再运行：
+首次启动空数据库会创建10个课程账号和4个资金账户；重新启动不会清空数据。已有独立演示库及快照继续保留，恢复数据可通过 MySQL 客户端导入快照完成。日常使用只需启动一个服务。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Prepare-Demo.ps1
-```
-
-输入提示中的独立库全名后，脚本先备份该库旧数据，再重建项目表，保存10个固定账号、4个初始资金账户、低中高3条待核实线索的快照。快照中尚未派发任务或占用资金。快照及原应用密钥保存在本机 `.local`，不提交仓库，也不复制到队友电脑；队友用自己的配置重新准备。
-
-每次演示前恢复这个起点并启动独立实例：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start-Demo.ps1
-```
-
-再次输入独立库全名确认后，打开 `http://127.0.0.1:8090/`。恢复会覆盖该验证库中的项目演练数据，不影响日常业务库；这个库也供回归测试使用，请勿与测试同时运行。默认端口可在准备时用 `-Port` 指定。结束时运行 `scripts/Stop-Verify.ps1`；日常使用按本文开头的命令前台运行原业务库。
-
-此前版本于2026-11-10在本机 Windows PowerShell 5.1 实测准备、恢复及资金操作后的重复复位：9个账号、4个资金账户、评分0/49/79的三档线索恢复一致，各角色可登录；快照保留原应用密钥，日常业务库各项目表的校验值未改变。另从页面走通“拒绝执行→追加线索→补充复核→重发→机构执行→网格回传→中心办结”，资金与日志校验通过，验收后再次恢复初始快照。本机证据为 `tests/results/windows-demo-gate.json`、`ui-review-gate-acceptance.json` 及同目录截图；这属于Windows实机验收，不是Ubuntu CI执行了PowerShell脚本。
-
-同日追加验收了未扫描的过期账户：页面显示“已到期，不再复用”并禁选，直接派发返回409后解除状态、余额和唯一释放流水均已保存。随后恢复快照，在正常定时扫描开启的实例上从页面完成群众举报、中心复核派发、机构止付6000元、网格上传材料回传及中心办结，资金与审计校验通过；再次复位后账号、余额、线索和空任务与初始快照一致。本机记录为 `tests/results/ui-expiry-acceptance.json`、`ui-four-role-deadline-acceptance.json` 及 `ui-four-role-deadline-complete.png`。
-
-本轮全面复查又在Windows独立演示库验收了“超期任务督办→网格到场、上传材料、回传→中心办结”，以及“网格宣防打卡→中心结束任务”；切换机构与群众账号确认解除后没有继续执行、更正入口，未受理申诉显示已失效及具体原因。准备举报、派发和冻结使用接口建立验收数据，推进到期使用原有时效接口，上述页面步骤由浏览器实际操作；最终资金与审计校验通过。证据为 `tests/results/ui-lifecycle-acceptance.json`、`ui-lifecycle-acceptance.png` 及 `ui-lifecycle-overdue.png`。
+备份和恢复应同时保留数据库、`.local/uploads` 及 `config/application.properties` 中的原应用密钥。应用密钥与已加密记录对应，不能为已有数据库重新生成。恢复演示快照时使用独立数据库，避免覆盖日常业务数据。
 
 ## 身份与资金账户
 
@@ -77,22 +58,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start-Demo.ps1
 
 “代他人举报”与“提供线索”不自动把登录人当作受害人；中心根据材料核验。举报详情仍归提交者，受害人和账户户主不会因此读取别人的举报附件。申诉材料和返还材料也按各自申请人隔离。
 
-旧演示快照不含这些关系，升级后应重新执行一次 `Prepare-Demo.ps1` 建立新版独立演示起点。日常业务库升级保留全部记录，不猜测旧账户户主；缺少身份/收款依据的旧未完成申请会失效并保留意见，旧未执行止付缺少账户关联时转中心核验重发。已执行历史资金不改账，真实的新办理须先补齐关系。
+旧版演示快照可能不含这些关系，需要使用新版快照或在独立空库重新准备演示资料。日常业务库升级保留全部记录，不猜测旧账户户主；缺少身份/收款依据的旧未完成申请会失效并保留意见，旧未执行止付缺少账户关联时转中心核验重发。已执行历史资金不改账，真实的新办理须先补齐关系。
 
 ## 源码与维护
 
 前端位于 `frontend/src`，后端位于 `backend/src`。技术栈为 Vue 3、Spring Boot、Java 21 和 MySQL 8。本机已构建的 `backend/target/antifraud-1.0.0.jar` 包含前端资源，直接运行不需要另开Vite。Git仓库只保存源码，首次克隆需先构建。
 
-本机重新构建：
+本机重新构建时先停止正在运行的服务，再在项目根目录执行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start.ps1
+npm.cmd --prefix frontend ci
+npm.cmd --prefix frontend run build
+.\backend\mvnw.cmd -B -f backend\pom.xml clean package
 ```
 
-`Build.ps1` 自动查找 Java、Node/npm，使用仓库自带 Maven Wrapper，默认联网安装锁文件中的依赖。构建不需要数据库连接和密码。已有完整依赖缓存时可加 `-Offline`；仅需要构建且明确跳过单元测试时可加 `-SkipTests`。
+Maven会直接将`frontend/dist`打入运行包，不需要复制前端文件或执行辅助脚本。构建不需要数据库密码，默认执行Java单元测试；依赖已缓存时可在Maven命令中加`-o`。完成后使用本文开头的`java -jar`命令启动。
 
-备份使用 `scripts/Backup.ps1`，MySQL命令行工具从本机设置、PATH、MYSQL_HOME、安装注册表或常见安装目录查找。`Restore-Verify.ps1 -BackupFolder "完整备份目录"` 默认恢复到“当前数据库名_verify”，使用8089端口；可通过 `-TargetDatabase` 和 `-Port` 指定已创建的独立验证库及端口。该验证库需要事先创建并授权，不能指定为当前业务库，恢复会覆盖验证库内同名表。结束时执行 `Stop-Verify.ps1`。
+`backend/mvnw.cmd`是Maven官方构建工具，仅构建源码时使用，日常启动不需要它。已安装Maven时也可直接执行`mvn -B -f backend/pom.xml clean package`。
 
 ## 已做的检查
 
@@ -100,51 +82,42 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start.ps1
 
 `.github/workflows/ci.yml` 在向 `main` 推送和提交 PR 时执行前端测试及构建、后端测试及完整打包、MySQL 实际接口回归和旧数据迁移检查，测试报告保留7天。CI仅使用临时数据库与自动生成的密钥，不读取任何开发者的本机配置。
 
-本机前端测试可在 `frontend` 中执行 `npm test`；`Build.ps1` 默认包含后端单元测试。接口测试通过 `TEST_BASE_URL` 指定测试实例；SQL边界测试还需 `TEST_DB_NAME`、数据库连接及 `APP_KEY`，仅允许独立的 `antifraud_*verify` 或 `antifraud_*ci` 验证库。`functional_regressions.py`还需要 `APP_LOG` 指向该实例的应用日志，用于核验研判失败时记录了原始异常。综合测试会生成业务数据，不应对日常业务库执行。
+本机前端测试执行`npm.cmd --prefix frontend test`；后端测试执行`.\backend\mvnw.cmd -B -f backend\pom.xml test`。接口测试通过 `TEST_BASE_URL` 指定测试实例；SQL边界测试还需 `TEST_DB_NAME`、数据库连接及 `APP_KEY`，仅允许独立的 `antifraud_*verify` 或 `antifraud_*ci` 验证库。`functional_regressions.py`还需要 `APP_LOG` 指向该实例的应用日志，用于核验研判失败时记录了原始异常。综合测试会生成业务数据，不应对日常业务库执行。
 
 此前还完成过四角色29个页面入口、10万条虚构数据及20个独立账号的容量检查、数据库及附件恢复和本机启停验证。这些历史容量结果不代表每次改动都重新跑过压力测试。本机结果保存在 `tests/results`，运行记录不上传Git仓库。
 
-工具路径和本机配置另通过29项脚本检查，并在不含数据库配置的全新目录完成构建；备份、独立库恢复及自定义端口启停已实测。可运行 `powershell -NoProfile -ExecutionPolicy Bypass -File tests/portable_scripts.ps1` 重做脚本检查，该检查使用临时目录，不连接业务数据库。
+启动失败时先看终端提示和`.local/logs/application.log`，确认MySQL服务已运行、配置文件中的连接信息正确，且8088端口未被其他程序占用。
 
-启动失败时先看窗口提示和 `.local/logs`，确认自己的MySQL服务运行且应用端口未被其他程序占用。脚本面向 Windows PowerShell 5.1及以上，macOS/Linux需自行使用等价的环境变量和启动命令。
+## 首次从仓库运行
 
-## 首次从仓库构建
+准备JDK 21、Node.js 22.12以上及MySQL 8，设置`JAVA_HOME`并确保`java`、`node`、`npm`可在终端运行。两位开发者各自使用本机的数据库、用户名和密码。
 
-准备 JDK 21、Node.js 22.12以上及 MySQL 8，设置 `JAVA_HOME` 或把Java加入PATH，并把Node/npm加入PATH。先在仓库根目录构建，不用复制他人的数据库配置：
+1. 在MySQL中新建utf8mb4数据库和对应用户。
+2. 复制配置模板：
+
+   ```powershell
+   Copy-Item .\config\application.example.properties .\config\application.properties
+   notepad .\config\application.properties
+   ```
+
+3. 在配置文件中填写数据库地址、库名、用户名、密码及应用密钥。`server.port`是网页端口；`app.storage`是附件目录。模板里的占位值必须替换。
+4. 按“源码与维护”中的三个命令构建，然后执行`java -jar .\backend\target\antifraud-1.0.0.jar`。
+
+仅在为**全新空数据库**首次配置时，可以在PowerShell终端生成32字节Base64应用密钥，将输出填写到`app.key`：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1
+$keyBytes = New-Object byte[] 32
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($keyBytes)
+[Convert]::ToBase64String($keyBytes)
+$rng.Dispose()
 ```
 
-首次构建需要联网下载Maven和依赖，无需单独安装Maven。然后在自己的MySQL中建立utf8mb4数据库和专用用户，执行本机配置。例如自己建立的数据库名为 `fanzha_dev`、用户为 `fanzha_user`：
+本机真实配置文件已被Git忽略；仓库只提交不含密码、密钥的模板。队友复制模板填写自己的配置即可，不会覆盖别人的数据库。配置文件中的反斜杠须写成`\\`，路径也可使用正斜杠。已有数据库始终使用其原应用密钥。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Configure.ps1 -Database fanzha_dev -Username fanzha_user -HostAddress 127.0.0.1 -Port 3306
-. .\scripts\Env.ps1
-& $JavaCommand -jar .\backend\target\antifraud-1.0.0.jar
-```
+## 数据与升级
 
-脚本在本机提示输入数据库密码；它只保存连接配置，不创建数据库或数据库用户。`-Port` 是MySQL端口，`-AppPort` 是网页端口，默认8088。应用首次启动会创建表和虚构基础资料。已有配置会拒绝覆盖；更改连接地址或端口可以编辑自己的 `.local/database.json` 后重启。不同电脑的库名、账号、密码和端口无需一致。
-
-## 不同电脑的工具路径
-
-一般只需配置环境变量，不用修改脚本。Java按 `.local/tools.json` 的 `javaHome`、`JAVA_HOME`、PATH查找；Node按 `nodeHome`、`NODE_HOME`、PATH查找。MySQL客户端仅在备份及恢复时需要。
-
-特殊安装目录可把 `scripts/tools.example.json` 复制为 `.local/tools.json`，仅填写需要覆盖的字段。例如：
-
-```json
-{
-  "mysqlBin": "E:/Software/MySQL/bin",
-  "mavenUserHome": "E:/DevCache/maven",
-  "npmCache": "E:/DevCache/npm"
-}
-```
-
-`javaHome` 指向JDK根目录，`nodeHome` 指向含node.exe和npm.cmd的目录，`mysqlBin` 指向含mysql.exe和mysqldump.exe的目录。路径支持空格，JSON建议使用正斜杠。`mavenUserHome` 控制Wrapper缓存，并默认使用其repository子目录保存Maven依赖；`mavenRepository`可单独覆盖依赖目录。未设置时沿用当前电脑的环境变量与默认缓存。
-
-`.local`已被Git忽略，自己的工具路径和数据库配置不会提交或覆盖队友配置。密码及应用密钥使用当前Windows用户的DPAPI保存，请各自初始化，不复制他人的 `.local`。
-
-数据库升级由 `Migrations.java` 按版本执行，成功版本记录在 `af_migration` 中。启动完成升级与基础资料初始化后才开放接口。本轮会保留既有业务记录，将号码、账户及URL的索引升级为由现有应用密钥派生的 HMAC 指纹，同时规范化旧URL。升级前应运行 `scripts/Backup.ps1`；恢复时必须同时恢复数据和原应用密钥。
+数据库升级由 `Migrations.java` 按版本执行，成功版本记录在 `af_migration` 中。启动完成升级与基础资料初始化后才开放接口。本轮会保留既有业务记录，将号码、账户及URL的索引升级为由现有应用密钥派生的 HMAC 指纹，同时规范化旧URL。升级前可用MySQL客户端或`mysqldump`备份数据库，并保留附件和本机配置；恢复时必须同时恢复数据和原应用密钥。
 
 网格员可查看本社区待领取任务摘要及本人负责的任务；领取后才能查看居民和材料。回执更正目前支持止付，返还和解除保留原业务流程。宣传活动实际发生时间须在任务创建与截止时间之间，按时完成的活动允许事后登记。未关联材料可由上传人移除，每个账号或匿名会话最多暂存20份、合计50MB，超过24小时的未关联材料由后台清理；已提交材料不参与此清理。
 
