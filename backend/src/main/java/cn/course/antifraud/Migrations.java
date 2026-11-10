@@ -145,6 +145,11 @@ public class Migrations implements CommandLineRunner {
                     }
                     mark(11);
                 });
+                if(!applied(12)){
+                    column("af_article","cover_id","VARCHAR(40)");
+                    foreignKey("af_article","fk_article_cover","cover_id","af_attachment");
+                    mark(12);
+                }
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }

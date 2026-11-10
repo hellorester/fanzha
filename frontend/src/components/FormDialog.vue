@@ -7,7 +7,11 @@ const props=defineProps({title:String,description:String,fields:Array,initial:Ob
 const emit=defineEmits(['close','done','conflict'])
 const data=reactive({...props.initial}),error=ref(''),busy=ref(false),uploads=reactive({}),dialog=ref(null),formId=useId()
 const draft=createAttachmentDraft(api)
-props.fields.forEach(f=>{if(data[f.key]===undefined)data[f.key]=f.default??(f.type==='checkbox'?false:f.type==='file'?[]:'')})
+props.fields.forEach(f=>{
+ const initialFiles=(f.initialFiles||[]).map(file=>({...file,committed:true}))
+ if(initialFiles.length){uploads[f.key]=initialFiles;data[f.key]=initialFiles.map(file=>file.id)}
+ else if(data[f.key]===undefined)data[f.key]=f.default??(f.type==='checkbox'?false:f.type==='file'?[]:'')
+})
 const summaryItems=computed(()=>props.summary?.(data)||[])
 const groups=computed(()=>{
  const result=[]
@@ -36,21 +40,23 @@ function keydown(e){
 async function upload(e,field){
  error.value='';busy.value=true
  try{
-  const selected=[...e.target.files]
-  if(selected.length+(uploads[field.key]?.length||0)>10)throw Error('最多上传10个文件')
+  const selected=[...e.target.files],limit=field.maxFiles||10,current=uploads[field.key]||[],replacing=limit===1&&selected.length===1
+  if(!selected.length)return
+  if(selected.length>limit||!replacing&&selected.length+current.length>limit)throw Error('最多上传'+limit+'个文件')
   for(const file of selected){
    if(file.size>10*1024*1024)throw Error(file.name+' 超过10MB')
    const body=new FormData();body.append('file',file)
    const added=await draft.upload(body)
    if(!added)break
-   uploads[field.key]=[...(uploads[field.key]||[]),added]
+   if(replacing){for(const old of current)if(!old.committed)await draft.remove(old.id);uploads[field.key]=[added]}
+   else uploads[field.key]=[...(uploads[field.key]||[]),added]
    data[field.key]=uploads[field.key].map(f=>f.id)
   }
  }catch(e){error.value=e.message}finally{busy.value=false;e.target.value=''}
 }
 async function removeFile(field,index){
  error.value='';busy.value=true
- try{await draft.remove(uploads[field.key][index].id);uploads[field.key].splice(index,1);data[field.key]=uploads[field.key].map(x=>x.id)}
+ try{const file=uploads[field.key][index];if(!file.committed)await draft.remove(file.id);uploads[field.key].splice(index,1);data[field.key]=uploads[field.key].map(x=>x.id)}
  catch(e){error.value=e.message}finally{busy.value=false}
 }
 async function send(){
@@ -84,8 +90,8 @@ async function send(){
          <textarea v-if="item.field.type==='textarea'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="item.field.required" :maxlength="item.field.max||2000" :rows="item.field.rows||3" :placeholder="item.field.placeholder" :disabled="busy"></textarea>
          <select v-else-if="item.field.type==='select'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="item.field.required" :disabled="busy"><option value="" :disabled="item.field.required">{{item.field.required?'请选择':'请选择（可不选）'}}</option><option v-for="o in item.field.options" :key="o.value??o" :value="o.value??o" :disabled="o.disabled">{{o.label??o}}</option></select>
          <template v-else-if="item.field.type==='file'">
-          <label class="upload-control" :class="{disabled:busy}"><input :id="formId+'-'+item.key" type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.docx,.txt" :disabled="busy" @change="upload($event,item.field)"><span class="upload-button"><AppIcon name="upload" :size="16"/>{{busy?'正在处理…':'选择文件'}}</span><span class="upload-hint">PNG / JPG / PDF / DOCX / TXT · 单个不超过 10 MB</span></label>
-          <div v-for="(file,i) in uploads[item.key]||[]" :key="file.id" class="upload-item"><AppIcon name="file" :size="16"/><span>{{file.filename}}</span><button type="button" class="icon-button" :aria-label="'移除 '+file.filename" :disabled="busy" @click="removeFile(item.field,i)"><AppIcon name="close" :size="16"/></button></div>
+          <label class="upload-control" :class="{disabled:busy}"><input :id="formId+'-'+item.key" type="file" :multiple="(item.field.maxFiles||10)>1" :accept="item.field.accept||'.png,.jpg,.jpeg,.pdf,.docx,.txt'" :disabled="busy" @change="upload($event,item.field)"><span class="upload-button"><AppIcon name="upload" :size="16"/>{{busy?'正在处理…':uploads[item.key]?.length&&item.field.maxFiles===1?'更换图片':'选择文件'}}</span><span class="upload-hint">{{item.field.fileHint||'PNG / JPG / PDF / DOCX / TXT · 单个不超过 10 MB'}}</span></label>
+          <div v-for="(file,i) in uploads[item.key]||[]" :key="file.id" class="upload-item" :class="{'image-upload-item':item.field.image}"><img v-if="item.field.image" :src="'/api/attachments/'+file.id" :alt="'封面预览：'+file.filename"><AppIcon v-else name="file" :size="16"/><span>{{file.filename}}</span><button type="button" class="icon-button" :aria-label="'移除 '+file.filename" :disabled="busy" @click="removeFile(item.field,i)"><AppIcon name="close" :size="16"/></button></div>
          </template>
          <div v-else class="input-wrap"><input :id="formId+'-'+item.key" v-model="data[item.key]" :type="item.field.type||'text'" :required="item.field.required" :step="item.field.step||'any'" :min="item.field.min" :max="item.field.max" :maxlength="item.field.maxlength||500" :placeholder="item.field.placeholder" :autocomplete="item.field.type==='password'?'new-password':'off'" :disabled="busy" :class="{'has-suffix':item.field.unit}"><span v-if="item.field.unit" class="input-suffix">{{item.field.unit}}</span></div>
          <small v-if="item.field.help" class="field-help">{{item.field.help}}</small>

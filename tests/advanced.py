@@ -89,10 +89,13 @@ def advanced():
  require(center.call('/configs')[0]['id']==before['id'],'无效配置不污染有效版本')
  config=dict(before['data']);config['weights']=[20,20,20,20,20];center.call('/configs',config)
  require(center.call('/configs')[0]['id']!=before['id'],'有效配置发布为新版本');center.call('/configs',before['data'])
- article={'title':'验收示例：辨别冒充客服','category':'课程示例','summary':'演示发布与下线。','body':'请通过官方渠道核验，切勿向陌生账户转账。','state':'草稿'}
- ar=center.call('/articles',article)['id'];Client().call(f'/articles/{ar}',expected=404)
- article['state']='已发布';center.call(f'/articles/{ar}',article);Client().call(f'/articles/{ar}')
- article['state']='已下线';center.call(f'/articles/{ar}',article);Client().call(f'/articles/{ar}',expected=404)
+ invalid_cover=center.file();invalid_article={'title':'无效封面测试','category':'课程示例','summary':'非图片不能作为文章封面。','body':'仅用于验证封面类型。','state':'草稿','cover':[invalid_cover]}
+ center.call('/articles',invalid_article,expected=400);center.call('/attachments/'+invalid_cover,method='DELETE')
+ cover=center.image();article={'title':'验收示例：辨别冒充客服','category':'课程示例','summary':'演示发布、封面替换与下线。','body':'请通过官方渠道核验，切勿向陌生账户转账。','state':'草稿','cover':[cover]}
+ ar=center.call('/articles',article)['id'];public_reader=Client();public_reader.call(f'/articles/{ar}',expected=404);public_reader.binary('/attachments/'+cover,expected=404)
+ article['state']='已发布';center.call(f'/articles/{ar}',article);published=public_reader.call(f'/articles/{ar}');require(published['cover_id']==cover,'已发布文章返回自定义封面');require(public_reader.binary('/attachments/'+cover)[0]=='image/png','已发布封面可公开读取')
+ replacement=center.image();article['cover']=[replacement];center.call(f'/articles/{ar}',article);require(public_reader.call(f'/articles/{ar}')['cover_id']==replacement,'文章封面可以替换');public_reader.binary('/attachments/'+cover,expected=404)
+ article['state']='已下线';center.call(f'/articles/{ar}',article);public_reader.call(f'/articles/{ar}',expected=404);public_reader.binary('/attachments/'+replacement,expected=404)
  camp=center.call('/campaigns',{'title':'防范冒充客服宣传（验收）','description':'虚构社区活动，用于宣防流程验收。','communityId':1,'dueAt':(datetime.datetime.now()+datetime.timedelta(days=2)).isoformat()})['id']
  punch={'people':0,'sessions':1,'form':'线下讲解','time':datetime.datetime.now().isoformat(),'note':'零触达人次边界测试','requestKey':str(uuid.uuid4())}
  grid.call(f'/campaigns/{camp}/checkin',punch);grid.call(f'/campaigns/{camp}/checkin',punch,expected=409)

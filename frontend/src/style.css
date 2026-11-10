@@ -292,6 +292,8 @@ input.has-suffix{padding-right:37px}
 .upload-item{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f5f7fc;border:1px solid #e8edf6;border-radius:4px;color:#7f91b0;font-size:12px}
 .upload-item>span{flex:1;min-width:0;overflow-wrap:anywhere}
 .upload-item .icon-button{height:26px;min-height:26px;width:26px}
+.upload-item.image-upload-item{display:grid;grid-template-columns:128px minmax(0,1fr) 32px;padding:10px;gap:12px;background:#fff;color:#5f6f88}
+.image-upload-item>img{width:128px;aspect-ratio:16/9;object-fit:cover;border-radius:4px;background:#eef2f7}
 .dialog-footer{display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:15px 25px;border-top:1px solid var(--line);background:#fff;flex-shrink:0;min-height:69px}
 .dialog-footer>div{display:flex;align-items:center;gap:10px}
 .dialog-footer button{min-width:78px;min-height:37px;font-size:13px}

@@ -1,5 +1,5 @@
 """Runs real HTTP workflows against the local course prototype; uses virtual data only."""
-import urllib.request,urllib.error,http.cookiejar,json,uuid,datetime,time,pathlib,sys,os
+import urllib.request,urllib.error,http.cookiejar,json,uuid,datetime,time,pathlib,sys,os,base64
 sys.stdout.reconfigure(encoding='utf-8')
 BASE=os.environ.get('TEST_BASE_URL','http://127.0.0.1:8088/api')
 results=[]
@@ -32,6 +32,19 @@ class Client:
   boundary=uuid.uuid4().hex
   data=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="proof.txt"\r\nContent-Type: text/plain\r\n\r\nCourse demonstration evidence\r\n--{boundary}--\r\n').encode()
   return self.call('/attachments',raw=data,ctype='multipart/form-data; boundary='+boundary)['id']
+ def image(self):
+  boundary=uuid.uuid4().hex;png=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/6af4WQAAAABJRU5ErkJggg==')
+  data=f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="cover.png"\r\nContent-Type: image/png\r\n\r\n'.encode()+png+f'\r\n--{boundary}--\r\n'.encode()
+  return self.call('/attachments',raw=data,ctype='multipart/form-data; boundary='+boundary)['id']
+ def binary(self,path,expected=200):
+  req=urllib.request.Request(BASE+path,headers={'X-CSRF-Token':self.csrf});started=time.perf_counter()
+  try:
+   with self.opener.open(req,timeout=20) as response:status=response.status;content=response.read();ctype=response.headers.get_content_type()
+  except urllib.error.HTTPError as e:status=e.code;content=e.read();ctype=e.headers.get_content_type()
+  elapsed=(time.perf_counter()-started)*1000
+  if status!=expected:raise AssertionError(f'{self.name} {path}: expected {expected}, received {status}')
+  results.append({'actor':self.name,'path':path,'status':status,'ms':round(elapsed,2)})
+  return ctype,content
 def require(condition,label):
  if not condition:raise AssertionError(label)
  results.append({'check':label,'pass':True})
