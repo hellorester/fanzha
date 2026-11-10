@@ -5,7 +5,7 @@ const props=defineProps({busy:Boolean,error:String})
 const emit=defineEmits(['close','submit','account'])
 const username=defineModel('username'),password=defineModel('password'),dialog=ref(null),id=useId()
 const identity=defineModel('role',{default:'PUBLIC'})
-const identities=[{value:'PUBLIC',label:'群众用户',icon:'user',account:'public2'},{value:'CENTER',label:'反诈中心',icon:'shield',account:'center'},{value:'PAYMENT',label:'支付机构',icon:'bank',account:'pay1'},{value:'GRID',label:'社区网格',icon:'pin',account:'grid3'}]
+const identities=[{value:'PUBLIC',label:'群众用户',icon:'user',account:'public1'},{value:'CENTER',label:'反诈中心',icon:'shield',account:'center'},{value:'PAYMENT',label:'支付机构',icon:'bank',account:'pay1'},{value:'GRID',label:'社区网格',icon:'pin',account:'grid3'}]
 const selected=computed(()=>identities.find(item=>item.value===identity.value)||identities[0])
 let previous
 onMounted(()=>{previous=document.activeElement;dialog.value?.querySelector('input[type=radio]:checked')?.focus({preventScroll:true})})
@@ -23,8 +23,8 @@ function keys(e){if(e.key==='Escape'&&!props.busy)emit('close');if(e.key==='Tab'
     <div v-if="error" class="error-box" role="alert">{{error}}</div>
     <button type="submit" class="primary account-submit" :disabled="busy">{{busy?'正在登录…':'登录'}}</button>
    </form>
-   <div v-if="identity==='PUBLIC'" class="login-quick public-account-quick"><span>演示群众账号</span><button class="text-button" :disabled="busy" @click="$emit('account','public2')">居民二（受害人）</button><button class="text-button" :disabled="busy" @click="$emit('account','public3')">居民三（冻结账户户主）</button></div>
-   <div class="login-quick"><span>{{selected.label}}</span><button class="text-button" :disabled="busy" @click="$emit('account',selected.account)">填入快捷账号<AppIcon name="arrow" :size="14"/></button></div>
+   <div v-if="identity==='PUBLIC'" class="login-quick public-account-quick"><span>演示群众账号</span><button class="text-button" :disabled="busy" @click="$emit('account','public1')">居民一</button><button class="text-button" :disabled="busy" @click="$emit('account','public2')">居民二</button><button class="text-button" :disabled="busy" @click="$emit('account','public3')">居民三</button></div>
+   <div v-else class="login-quick"><span>{{selected.label}}</span><button class="text-button" :disabled="busy" @click="$emit('account',selected.account)">填入快捷账号<AppIcon name="arrow" :size="14"/></button></div>
   </section>
  </div>
 </template>
