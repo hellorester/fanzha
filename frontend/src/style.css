@@ -78,6 +78,15 @@ code,.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;letter-
 .topbar-meta{display:flex;align-items:center;gap:20px;flex-shrink:0}
 .topbar-date{font-size:11px;color:#9aa3b1}
 .mobile-menu{display:none}
+.mobile-account{display:none;position:relative}
+.mobile-account summary{list-style:none;display:flex;align-items:center;gap:6px;min-height:40px;cursor:pointer;color:var(--ink);font-size:12px}
+.mobile-account summary::-webkit-details-marker{display:none}
+.account-popover{position:absolute;right:0;top:calc(100% + 8px);width:238px;max-width:calc(100vw - 36px);padding:18px;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 32px #17233b1a;z-index:45}
+.account-popover>strong,.account-popover>span{display:block;overflow-wrap:anywhere}
+.account-popover>strong{font-size:14px;margin-bottom:5px}
+.account-popover>span{font-size:12px;color:var(--muted)}
+.account-popover>button{width:100%;margin-top:16px;justify-content:center}
+@media(max-width:760px){.mobile-account{display:block}.sidebar-footer{display:none}}
 .content{padding:28px 32px 38px;flex:1;min-width:0;width:100%;max-width:1720px;margin:0 auto}
 .page-heading{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:25px}
 .page-heading>div>p{margin:7px 0 0;color:#7d899d;font-size:12px}
