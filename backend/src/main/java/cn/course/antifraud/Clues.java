@@ -2,6 +2,7 @@ package cn.course.antifraud;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.ObjectProvider;
 import java.math.*;
 import java.time.*;
 import java.util.*;
@@ -9,8 +10,10 @@ import static cn.course.antifraud.Support.*;
 
 @Service
 public class Clues {
-    private final Support s;private final Files files;
-    public Clues(Support s,Files files){this.s=s;this.files=files;}
+    private final Support s;private final Files files;private final ObjectProvider<Commands> commands;
+    public Clues(Support s,Files files,ObjectProvider<Commands> commands){this.s=s;this.files=files;this.commands=commands;}
+    // Only a completed deadline transition commits when dispatch itself is rejected.
+    static class DispatchDeadlineChanged extends Problem {DispatchDeadlineChanged(String state){super(409,state.equals("已解除")?"原止付已到期，已解除并释放剩余冻结资金，不能复用；如需再次处置，请另行受理预警":"原止付已超时，已转中心督办；请进入原指令详情使用“复核重发”");}}
     // Issuing callers hold the alert lock shared by merging and manual review.
     public boolean freezeReviewReady(Map<String,Object> alert){
         if(!Set.of("已核实","已派单","处置中").contains(str(alert,"state"))||yes(alert,"needs_review")||num(alert,"reviewed_by")==0)return false;
@@ -80,12 +83,18 @@ public class Clues {
         return map("code",report.get("code"),"queryToken",token,"credentialReset",true,"ok",true);
     }
     public List<Map<String,Object>> alerts(User u){u.roles("CENTER");return s.rows("SELECT a.*,c.name community_name,(SELECT COUNT(*) FROM af_report r WHERE r.alert_id=a.id) clue_count FROM af_alert a LEFT JOIN af_community c ON c.id=a.community_id ORDER BY FIELD(a.level,'高','中','低'),a.id DESC LIMIT 300");}
-    public Map<String,Object> alert(User u,long id){u.roles("CENTER");var a=s.one("SELECT * FROM af_alert WHERE id=?",id);a.put("freeze_review_ready",freezeReviewReady(a));a.put("reports",s.rows("SELECT * FROM af_report WHERE alert_id=? ORDER BY id",id).stream().map(r->reportView(r,true)).toList());a.put("scores",s.rows("SELECT * FROM af_score WHERE alert_id=? ORDER BY id DESC LIMIT 100",id).stream().peek(r->r.put("details",s.decode(str(r,"details")))).toList());a.put("assessments",s.rows("SELECT x.*,u.display_name FROM af_assessment x JOIN af_user u ON u.id=x.actor_id WHERE x.alert_id=? ORDER BY x.id DESC",id));a.put("commands",s.rows("SELECT id,code,kind,state,bank_id,retry_of,active_key IS NOT NULL AS dispatch_reusable,requested,actual,remaining,expires_at FROM af_command WHERE alert_id=? ORDER BY id",id));a.put("visits",s.rows("SELECT * FROM af_visit WHERE alert_id=?",id));a.put("timeline",s.rows("SELECT action,old_state,new_state,note,created_at FROM af_log WHERE entity_type='alert' AND entity_id=? ORDER BY id",id));return a;}
+    public Map<String,Object> alert(User u,long id){u.roles("CENTER");var now=s.now();long timeout=num(config(),"timeoutMinutes");var a=s.one("SELECT * FROM af_alert WHERE id=?",id);a.put("freeze_review_ready",freezeReviewReady(a));a.put("reports",s.rows("SELECT * FROM af_report WHERE alert_id=? ORDER BY id",id).stream().map(r->reportView(r,true)).toList());a.put("scores",s.rows("SELECT * FROM af_score WHERE alert_id=? ORDER BY id DESC LIMIT 100",id).stream().peek(r->r.put("details",s.decode(str(r,"details")))).toList());a.put("assessments",s.rows("SELECT x.*,u.display_name FROM af_assessment x JOIN af_user u ON u.id=x.actor_id WHERE x.alert_id=? ORDER BY x.id DESC",id));a.put("commands",s.rows("SELECT id,code,kind,state,bank_id,retry_of,active_key,requested,actual,remaining,expires_at,created_at,accepted_at FROM af_command WHERE alert_id=? ORDER BY id",id).stream().peek(c->{var deadline=Commands.deadline(c,timeout);boolean passed=deadline!=null&&!now.isBefore(deadline);c.put("dispatch_deadline_passed",passed);c.put("dispatch_reusable",c.remove("active_key")!=null&&!passed);}).toList());a.put("visits",s.rows("SELECT * FROM af_visit WHERE alert_id=?",id));a.put("timeline",s.rows("SELECT action,old_state,new_state,note,created_at FROM af_log WHERE entity_type='alert' AND entity_id=? ORDER BY id",id));return a;}
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED) public void review(User u,long id,Map<String,Object> b){u.roles("CENTER");var a=s.lockAlert(id,num(b,"victimId"));conflict(!Set.of("已闭环","已驳回","已作废").contains(str(a,"state")),"当前预警已结束");String decision=required(b,"decision",20),note=required(b,"note",1000);require(Set.of("通过","驳回").contains(decision),"审核结论无效");boolean dispatched=s.count("SELECT COUNT(*) FROM af_command WHERE alert_id=?",id)>0;
         long victim=num(b,"victimId")>0?num(b,"victimId"):num(a,"victim_id");long community=num(b,"communityId")>0?num(b,"communityId"):num(a,"community_id");if(dispatched)require(victim==num(a,"victim_id")&&community==num(a,"community_id"),"派发后不能修改受害人或社区归属，请在原任务下处理补充线索");if(victim>0)s.one("SELECT id FROM af_victim WHERE id=?",victim);if(community>0)s.one("SELECT id FROM af_community WHERE id=?",community);String level=str(b,"level");if(level.isEmpty())level=str(a,"level");require(Set.of("高","中","低").contains(level),"风险等级无效");String next=dispatched?str(a,"state"):decision.equals("通过")?"已核实":"已驳回";
         s.db.update("INSERT INTO af_assessment(alert_id,actor_id,decision,note,created_at) VALUES(?,?,?,?,?)",id,u.id(),decision,note,s.now());s.db.update("UPDATE af_alert SET state=?,victim_id=?,community_id=?,level=?,needs_review=FALSE,reviewed_by=?,review_note=?,updated_at=? WHERE id=?",next,victim==0?null:victim,community==0?null:community,level,u.id(),note,s.now(),id);if(victim>0)s.db.update("UPDATE af_report SET victim_id=? WHERE alert_id=?",victim,id);if(victim!=num(a,"victim_id"))s.log(u,"更正受害人关联","alert",id,null,null,"受害人 #"+num(a,"victim_id")+" → #"+victim+"；同步关联举报，提交账号保持不变；"+note);s.log(u,"人工复核","alert",id,str(a,"state"),next,decision+"："+note);
     }
-    @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED) public Map<String,Object> dispatch(User u,long id,Map<String,Object> b){u.roles("CENTER");var a=s.lockAlert(id);conflict(freezeReviewReady(a),"请先完成有效人工复核；新增线索须补充复核通过");require(num(a,"victim_id")>0&&num(a,"community_id")>0,"请先补录受害人及社区");long bankId=num(b,"bankId");s.one("SELECT id FROM af_bank WHERE id=?",bankId);var bank=s.one("SELECT * FROM af_bank WHERE id=? FOR UPDATE",bankId);String activeKey=id+":"+bankId;var old=s.optional("SELECT id,code FROM af_command WHERE active_key=?",activeKey);long commandId;
+    @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED,noRollbackFor=DispatchDeadlineChanged.class) public Map<String,Object> dispatch(User u,long id,Map<String,Object> b){u.roles("CENTER");var a=s.lockAlert(id);conflict(freezeReviewReady(a),"请先完成有效人工复核；新增线索须补充复核通过");require(num(a,"victim_id")>0&&num(a,"community_id")>0,"请先补录受害人及社区");long bankId=num(b,"bankId");s.one("SELECT id FROM af_bank WHERE id=?",bankId);String activeKey=id+":"+bankId;var old=s.optional("SELECT * FROM af_command WHERE active_key=? FOR UPDATE",activeKey);var bank=s.one("SELECT * FROM af_bank WHERE id=? FOR UPDATE",bankId);long commandId;
+        if(old!=null){
+            // Read the clock after all row locks: waiting for funds may cross the deadline.
+            commands.getObject().scanOne(num(old,"id"),s.now(),u,false);
+            var checked=s.one("SELECT state,active_key FROM af_command WHERE id=?",old.get("id"));
+            if(checked.get("active_key")==null)throw new DispatchDeadlineChanged(str(checked,"state"));
+        }
         if(old==null){
             // Clearing active_key ends the active slot, not this account's dispatch history.
             // The alert lock also serializes receipts and retries with this history check.

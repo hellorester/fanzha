@@ -1,8 +1,10 @@
 package cn.course.antifraud;
 import org.springframework.stereotype.Component;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import static cn.course.antifraud.Support.*;
 @Component
+@ConditionalOnProperty(name="app.commands.scan-enabled",havingValue="true",matchIfMissing=true)
 public class Timer {
  private final Support s;private final Commands commands;private final Auth auth;
  public Timer(Support s,Commands commands,Auth auth){this.s=s;this.commands=commands;this.auth=auth;}

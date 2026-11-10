@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static cn.course.antifraud.Support.*;
 
 class DeadlineTest {
@@ -32,8 +33,11 @@ class DeadlineTest {
     }
     @ParameterizedTest @ValueSource(ints={-1,0,1})
     void frozenFundsReleaseAtTheExactExpirySecond(int offset){
-        var db=mock(JdbcTemplate.class);var command=map("id",1L,"kind","止付","bank_id",1L,"state","生效中","expires_at",base,"remaining",100,"period_version",1);
-        new Commands(support(db,command),mock(Clues.class),mock(Files.class)).scanOne(1,base.plusSeconds(offset),null,false);
-        verify(db,offset<0?never():times(1)).update(eq("UPDATE af_bank SET available=? WHERE id=?"),eq(money(1100)),eq(1));
+        for(String state:List.of("生效中","已延期")){
+            var db=mock(JdbcTemplate.class);var command=map("id",1L,"kind","止付","bank_id",1L,"state",state,"expires_at",base,"remaining",100,"period_version",1);
+            assertEquals(base,Commands.deadline(command,30));
+            new Commands(support(db,command),mock(Clues.class),mock(Files.class)).scanOne(1,base.plusSeconds(offset),null,false);
+            verify(db,offset<0?never():times(1)).update(eq("UPDATE af_bank SET available=? WHERE id=?"),eq(money(1100)),eq(1));
+        }
     }
 }

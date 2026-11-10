@@ -90,11 +90,12 @@ jobs:
           wait "$server_pid" || true
           python tests/migration_safety.py
           python tests/migration_regression.py prepare
-          java -jar backend/target/antifraud-1.0.0.jar > .local/ci-migration.log 2>&1 &
+          java -jar backend/target/antifraud-1.0.0.jar --app.commands.scan-enabled=false > .local/ci-migration.log 2>&1 &
           server_pid=$!
           python tests/wait_for_server.py
           python tests/migration_regression.py verify
           python tests/functional_regressions.py
+          python tests/dispatch_deadline_regressions.py
       - name: Preserve test reports
         if: always()
         uses: actions/upload-artifact@v4

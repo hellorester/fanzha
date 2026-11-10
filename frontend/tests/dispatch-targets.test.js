@@ -5,6 +5,11 @@ import {dispatchTargets} from '../src/dispatch-targets.js'
 const banks=[{id:1},{id:2},{id:3}]
 const freeze=(id,bank_id,state,dispatch_reusable=false)=>({id,bank_id,state,dispatch_reusable,kind:'止付'})
 
+test('unscanned expiry and timeout cannot appear as reusable account choices',()=>{
+ const targets=dispatchTargets(banks,[{...freeze(1,1,'已延期'),dispatch_deadline_passed:true},{...freeze(2,2,'受理中'),dispatch_deadline_passed:true}])
+ assert.deepEqual(targets.map(b=>[b.dispatchLabel,b.disabled]),[['已到期，不再复用',true],['已超时，请复核重发',true],['新派发',false]])
+})
+
 test('failed accounts require retry while untouched accounts allow first dispatch',()=>{
  const targets=dispatchTargets(banks,[freeze(1,1,'拒绝执行'),freeze(2,2,'未处理')])
  assert.deepEqual(targets.map(b=>[b.id,b.dispatchLabel,b.disabled]),[[1,'请复核重发',true],[2,'请复核重发',true],[3,'新派发',false]])

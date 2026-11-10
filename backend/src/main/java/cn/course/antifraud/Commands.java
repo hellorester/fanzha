@@ -17,9 +17,14 @@ public class Commands {
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED,noRollbackFor=CommandTimeout.class) public void accept(User u,long id){u.roles("PAYMENT");var peek=s.one("SELECT * FROM af_command WHERE id=?",id);access(u,peek);var original=lockOriginal(peek);var c=s.one("SELECT * FROM af_command WHERE id=? FOR UPDATE",id);if(expirePending(c,original,s.now(),u,""))throw new CommandTimeout();conflict(str(c,"state").equals("已送达"),"指令已受理或不处于待受理状态");s.db.update("UPDATE af_command SET state='受理中',accepted_at=? WHERE id=?",s.now(),id);s.log(u,"机构受理","command",id,str(c,"state"),"受理中","等待人工核查和回执");}
     // Only this rejection commits its timeout transition; all other business errors roll back.
     static class CommandTimeout extends Problem {CommandTimeout(){super(409,"指令已超时，已转中心督办");}}
+    static LocalDateTime deadline(Map<String,Object> c,long timeoutMinutes){
+        String state=str(c,"state");
+        if(Set.of("已送达","受理中").contains(state))return time(c.get("accepted_at")==null?c.get("created_at"):c.get("accepted_at")).plusMinutes(timeoutMinutes);
+        return str(c,"kind").equals("止付")&&Set.of("生效中","已延期").contains(state)?time(c.get("expires_at")):null;
+    }
     private boolean expirePending(Map<String,Object> c,Map<String,Object> original,LocalDateTime now,User actor,String label){
         String state=str(c,"state");if(!Set.of("已送达","受理中").contains(state))return false;
-        var deadline=time(c.get("accepted_at")==null?c.get("created_at"):c.get("accepted_at")).plusMinutes(num(clues.config(),"timeoutMinutes"));
+        var deadline=deadline(c,num(clues.config(),"timeoutMinutes"));
         if(now.isBefore(deadline))return false;
         long id=num(c,"id");s.db.update("UPDATE af_command SET state='未处理',active_key=NULL WHERE id=?",id);
         if(str(c,"kind").equals("返还"))s.db.update("UPDATE af_command SET reserved=GREATEST(0,reserved-?) WHERE id=?",c.get("requested"),original.get("id"));
