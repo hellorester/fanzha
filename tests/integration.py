@@ -33,7 +33,7 @@ class Client:
   data=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="proof.txt"\r\nContent-Type: text/plain\r\n\r\nCourse demonstration evidence\r\n--{boundary}--\r\n').encode()
   return self.call('/attachments',raw=data,ctype='multipart/form-data; boundary='+boundary)['id']
  def image(self):
-  boundary=uuid.uuid4().hex;png=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/6af4WQAAAABJRU5ErkJggg==')
+  boundary=uuid.uuid4().hex;png=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQqjjxHwAEpAJqhJsYSAAAAABJRU5ErkJggg==')
   data=f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="cover.png"\r\nContent-Type: image/png\r\n\r\n'.encode()+png+f'\r\n--{boundary}--\r\n'.encode()
   return self.call('/attachments',raw=data,ctype='multipart/form-data; boundary='+boundary)['id']
  def binary(self,path,expected=200):
