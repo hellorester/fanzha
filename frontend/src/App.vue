@@ -18,14 +18,27 @@ const username=ref(''),password=ref(''),from=ref(''),to=ref(''),queryCode=ref(''
 const loginOpen=ref(false),loginTarget=ref('dashboard'),loginRole=ref('PUBLIC'),loginError=ref(''),queryBusy=ref(false)
 const user=computed(()=>session.user),role=computed(()=>user.value?.role||'GUEST'),isCenter=computed(()=>role.value==='CENTER'),isAdmin=computed(()=>user.value?.admin)
 const navigation=[{id:'dashboard',label:'协同总览',roles:['CENTER','PAYMENT','GRID','PUBLIC']},{id:'reports',label:'举报与线索',roles:['PUBLIC','CENTER']},{id:'alerts',label:'研判与复核',roles:['CENTER']},{id:'commands',label:'协同指令',roles:['CENTER','PAYMENT','PUBLIC']},{id:'visits',label:'上门劝阻',roles:['CENTER','GRID']},{id:'applications',label:'返还与申诉',roles:['CENTER','PUBLIC']},{id:'notices',label:'时效与督办',roles:['CENTER']},{id:'campaigns',label:'社区宣防',roles:['CENTER','GRID']},{id:'articles',label:'反诈知识',roles:['CENTER','PUBLIC','GRID','PAYMENT']},{id:'banks',label:'资金账户',roles:['PAYMENT','CENTER','PUBLIC']},{id:'people',label:'实名人员',roles:['CENTER'],admin:true},{id:'corrections',label:'回执更正',roles:['PAYMENT','CENTER']},{id:'blacklist',label:'风险名单',roles:['CENTER']},{id:'configs',label:'规则配置',roles:['CENTER']},{id:'users',label:'账号管理',roles:['CENTER'],admin:true},{id:'logs',label:'操作日志',roles:['CENTER']}]
-const menus=computed(()=>navigation.filter(n=>n.roles.includes(role.value)&&(!n.admin||isAdmin.value)))
+const menus=computed(()=>navigation.filter(n=>n.roles.includes(role.value)&&(!n.admin||isAdmin.value)).map(n=>{
+ if(role.value==='PUBLIC'&&n.id==='dashboard')return {...n,label:'办理概览'}
+ if(role.value==='PUBLIC'&&n.id==='reports')return {...n,label:'我的举报'}
+ return n
+}))
 const navIcons={dashboard:'dashboard',reports:'file',alerts:'alert',commands:'exchange',visits:'pin',applications:'application',notices:'clock',campaigns:'campaign',articles:'book',banks:'bank',people:'users',corrections:'history',blacklist:'list',configs:'settings',users:'users',logs:'file',lookup:'search'}
 const navGroups=computed(()=>{
  const available=user.value?menus.value:[{id:'articles',label:'反诈知识'},{id:'lookup',label:'举报查询'}]
  const work=['dashboard','reports','alerts','commands','visits','applications','notices','banks']
  return [{label:'业务工作台',items:available.filter(m=>work.includes(m.id))},{label:user.value?'协作与管理':'公共服务',items:available.filter(m=>!work.includes(m.id))}].filter(g=>g.items.length)
 })
-const title=computed(()=>({dashboard:role.value==='PUBLIC'?'我的服务台':role.value==='GRID'?'社区协同工作台':role.value==='PAYMENT'?'机构处置工作台':'协同处置总览',reports:role.value==='PUBLIC'?'我的举报':'举报与线索',anonymous:'匿名举报',lookup:'举报进度查询',welcome:'欢迎使用',...Object.fromEntries(navigation.filter(n=>n.id!=='dashboard'&&n.id!=='reports').map(n=>[n.id,n.label]))}[page.value]||'反诈协同处置平台'))
+const title=computed(()=>({dashboard:role.value==='PUBLIC'?'办理概览':role.value==='GRID'?'社区协同工作台':role.value==='PAYMENT'?'机构处置工作台':'协同处置总览',reports:role.value==='PUBLIC'?'我的举报':'举报与线索',anonymous:'匿名举报',lookup:'举报进度查询',welcome:'欢迎使用',...Object.fromEntries(navigation.filter(n=>n.id!=='dashboard'&&n.id!=='reports').map(n=>[n.id,n.label]))}[page.value]||'反诈协同处置平台'))
+const trendTitle=computed(()=>({PUBLIC:'举报趋势',CENTER:'线索受理趋势',PAYMENT:'指令趋势',GRID:'任务趋势'}[role.value]||'业务趋势'))
+const dailySeries=computed(()=>{
+ const values=new Map((stats.value.daily||[]).map(item=>[item.day,Number(item.value)||0]))
+ const endText=stats.value.to||new Date().toISOString().slice(0,10),startText=stats.value.from||endText
+ const end=new Date(endText+'T00:00:00'),start=new Date(startText+'T00:00:00'),result=[]
+ for(let offset=13;offset>=0;offset--){const date=new Date(end);date.setDate(end.getDate()-offset);if(date<start)continue;const day=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');result.push({day,value:values.get(day)||0})}
+ return result
+})
+const dailyMax=computed(()=>Math.max(1,...dailySeries.value.map(item=>item.value)))
 const columns=computed(()=>({
  reports:[{key:'code',label:'受理编号'},{key:'kind',label:'类型'},{key:'source',label:'来源',format:businessName},{key:'processing',label:'研判状态',badge:true},{key:'state',label:'办理状态',badge:true},{key:'created_at',label:'受理时间'}],
  alerts:[{key:'code',label:'预警编号'},{key:'level',label:'风险等级',badge:true},{key:'score',label:'评分'},{key:'clue_count',label:'关联线索'},{key:'community_name',label:'所属社区'},{key:'state',label:'状态',badge:true},{key:'needs_review',label:'补充复核'}],
@@ -65,18 +78,18 @@ async function refresh(){
   return
  }
  if(!menus.value.some(m=>m.id===page.value)){page.value='dashboard';return}
- const sequence=++refreshSequence,currentPage=page.value,currentRole=role.value;
+ const sequence=++refreshSequence,currentPage=page.value;
  busy.value=true;error.value='';
  try{
   const nextMeta=await api('/meta');let nextRows,nextStats,nextPagination=null;const nextAttention=currentPage==='notices'?await api('/visit-attention'):[];
   if(currentPage==='dashboard'){
    nextStats=await api('/stats?'+new URLSearchParams({from:from.value,to:to.value}));
-   const endpoint=currentRole==='CENTER'?'/alerts':currentRole==='GRID'?'/visits':currentRole==='PAYMENT'?'/commands':'/reports';nextRows=await api(endpoint)
+   nextRows=[]
   }else if(pagedResources.has(currentPage)){
    nextPagination=await api('/list/'+currentPage+'?'+new URLSearchParams(listQuery.value));nextRows=nextPagination.items
   }else nextRows=await api('/'+currentPage);
   if(sequence!==refreshSequence)return;
-  visitAttention.value=nextAttention;meta.value=nextMeta;rows.value=nextRows;pagination.value=nextPagination;if(nextStats)stats.value=nextStats;
+  visitAttention.value=nextAttention;meta.value=nextMeta;rows.value=nextRows;pagination.value=nextPagination;if(nextStats){stats.value=nextStats;if(!from.value)from.value=nextStats.from;if(!to.value)to.value=nextStats.to}
   if(detail.value)await openDetail(detail.value.type,['notices','blacklist','banks'].includes(detail.value.type)?rows.value.find(x=>x.id===detail.value.id)||detail.value.data:{id:detail.value.id})
  }catch(e){if(sequence===refreshSequence)error.value=e.message}finally{if(sequence===refreshSequence)busy.value=false}
 }
@@ -163,8 +176,6 @@ function create(){({reports:reportForm,campaigns:campaignForm,articles:articleFo
 const d=computed(()=>detail.value?.data||{})
 const pendingTargets=computed(()=>(d.value.targetCandidates||[]).filter(t=>!(d.value.targets||[]).some(x=>x.bank_id===t.id)))
 const articleParagraphs=computed(()=>String(d.value.body||'').split(/\r?\n/).map(text=>text.trim()).filter(Boolean))
-const primaryRoute=computed(()=>({CENTER:'alerts',PAYMENT:'commands',GRID:'visits',PUBLIC:'reports'}[role.value]))
-const dashboardColumns=computed(()=>role.value==='CENTER'?[{key:'code',label:'预警编号'},{key:'level',label:'风险',badge:true},{key:'score',label:'评分'},{key:'state',label:'办理状态',badge:true}]:[{key:'code',label:'业务编号'},{key:'state',label:'当前状态',badge:true},{key:'created_at',label:'创建时间'}])
 const detailPairs=computed(()=>{const fields={code:'业务编号',kind:'业务类型',state:detail.value?.type==='applications'?'申请状态':'当前状态',processing:'研判状态',level:'风险等级',score:'规则评分',created_at:'创建时间',expires_at:'到期时间',deadline_at:'本次办理截止',person:'服务对象',victim_name:'已核验受害人',applicant_name:'申请人',payee:'本人收款账户',phone:'联络号码',arrived_at:'到场时间',result:'办理结果',returned_at:'回传时间',requested:'指令金额',actual:'实际执行',remaining:'剩余冻结',returned:'累计返还',reserved:'待执行占用',amount:detail.value?.type==='reports'?'涉及交易金额':'申请金额',approved:'核定金额',extension_count:'延期次数',source:'来源依据',enabled:'启用状态',value:detail.value?.type==='blacklist'?'匹配内容':'举报线索',transactionTime:'交易时刻',updated_at:'更新时间'};return Object.entries(fields).filter(([key])=>d.value[key]!=null&&!(key==='approved'&&d.value.fundsProgress)&&!(detail.value?.type==='commands'&&d.value.kind!=='止付'&&(['remaining','returned','reserved','extension_count'].includes(key)||key==='deadline_at'&&!['已送达','受理中'].includes(d.value.state)))).map(([key,label])=>({key,label,badge:['state','processing','level'].includes(key),value:['requested','actual','remaining','returned','reserved','amount','approved'].includes(key)?money(d.value[key]):fmt(['person','victim_name','applicant_name','source'].includes(key)?businessName(d.value[key]):d.value[key])}))})
 </script>
 
@@ -180,14 +191,13 @@ const detailPairs=computed(()=>{const fields={code:'业务编号',kind:'业务�
   </aside>
   <div v-if="mobile" class="nav-shade" @click="mobile=false"></div>
   <div class="main-area"><header class="topbar"><div class="breadcrumb-row"><button class="icon-button mobile-menu" aria-label="打开菜单" @click="mobile=!mobile;closeAccountMenu()"><AppIcon name="menu" :size="20"/></button><span class="muted">{{roleNames[role]||'公共服务'}}</span><AppIcon name="chevron" :size="13"/><strong>{{title}}</strong></div><div class="topbar-meta"><span class="topbar-date">{{new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'})}}</span><details ref="accountMenu" class="mobile-account" @toggle="accountOpen=$event.currentTarget.open" @keydown.esc.prevent="closeAccountMenu(true)" @focusout="!$event.currentTarget.contains($event.relatedTarget)&&closeAccountMenu()"><summary aria-label="查看当前账号" :aria-expanded="accountOpen" aria-controls="mobile-account-panel"><AppIcon name="user" :size="18"/><span>账号</span></summary><div id="mobile-account-panel" class="account-popover"><strong>{{businessName(user.displayName)}}</strong><span>{{user.username}} · {{roleNames[role]}}</span><button @click="logout"><AppIcon name="logout" :size="16"/>退出登录</button></div></details></div></header>
-  <main class="content"><div class="page-heading"><div><h1>{{title}}</h1></div><div class="heading-actions"><button v-if="page==='dashboard'" class="primary" @click="role==='PUBLIC'?reportForm():go(primaryRoute)">{{role==='PUBLIC'?'提交举报':'查看待办'}}<AppIcon name="arrow" :size="16"/></button><button v-if="user" :disabled="busy" @click="refresh"><AppIcon name="refresh" :size="16"/>刷新</button><button v-if="canCreate" class="primary" @click="create"><AppIcon name="plus" :size="16"/>{{page==='configs'?'发布新版本':page==='reports'?'提交线索':'新建'}}</button><button v-if="!user" class="primary" @click="reportForm"><AppIcon name="plus" :size="16"/>提交匿名举报</button></div></div>
+  <main class="content"><div class="page-heading"><div><h1>{{title}}</h1></div><div class="heading-actions"><button v-if="page!=='dashboard'" :disabled="busy" @click="refresh"><AppIcon name="refresh" :size="16"/>刷新</button><button v-if="canCreate" class="primary" @click="create"><AppIcon name="plus" :size="16"/>{{page==='configs'?'发布新版本':page==='reports'?(role==='PUBLIC'?'提交举报':'录入线索'):'新建'}}</button></div></div>
    <div v-if="error" class="error-box page-error" role="alert">{{error}}<button class="text-button" @click="refresh">重试</button></div><div v-if="busy" class="loading-bar" aria-label="正在加载"></div>
    <template v-if="page==='dashboard'">
     <div v-if="role==='PUBLIC'&&!user.verified" class="warning-box account-warning">身份资料待核验，请联系反诈中心。</div>
-    <div class="stats-filter"><span>统计范围</span><input type="date" v-model="from" aria-label="统计开始日期"><span>至</span><input type="date" v-model="to" aria-label="统计结束日期"><button class="small" @click="refresh">应用</button><a :href="exportUrl" class="export-link"><AppIcon name="download" :size="16"/>导出汇总</a></div>
-    <section v-if="stats.metrics.length" class="metric-grid" :style="{'--metric-columns':Math.min(4,stats.metrics.length)}"><article v-for="m in stats.metrics" :key="m.label" class="metric-card"><div><span>{{m.label}}</span></div><strong>{{fmt(m.value)}}<small>{{m.unit}}</small></strong></article></section>
-    <section :class="['dashboard-grid',{'single':!isCenter}]"><article class="panel"><div class="panel-heading"><h3>业务受理趋势</h3></div><div v-if="stats.daily.length" class="bar-chart"><div v-for="point in stats.daily.slice(-14)" class="bar-column" :title="point.day+'：'+point.value+'条'"><span>{{point.value}}</span><div :style="{height:Math.max(4,point.value/Math.max(...stats.daily.map(d=>d.value))*120)+'px'}"></div><small>{{point.day.slice(5)}}</small></div></div><div v-else class="empty compact">暂无业务记录</div></article><article v-if="isCenter" class="panel"><div class="panel-heading"><h3>风险分布</h3></div><div class="risk-list"><div v-for="level in ['高','中','低']"><span class="badge" :class="statusTone(level)">{{level}}风险</span><div class="risk-track"><i :class="statusTone(level)" :style="{width:(stats.risks.find(r=>r.label===level)?.value||0)/Math.max(1,stats.risks.reduce((a,r)=>a+Number(r.value),0))*100+'%'}"></i></div><strong>{{stats.risks.find(r=>r.label===level)?.value||0}}</strong></div></div></article></section>
-    <section class="panel"><div class="panel-heading"><div><h3>{{role==='PUBLIC'?'最近提交':'重点关注'}}</h3></div><button class="text-button" @click="go(primaryRoute)">查看全部<AppIcon name="arrow" :size="15"/></button></div><DataTable :rows="rows.slice(0,10)" :columns="dashboardColumns" @select="openDetail(primaryRoute,$event)"/></section>
+    <section class="overview-toolbar"><div class="stats-filter"><span>统计范围</span><input type="date" v-model="from" aria-label="统计开始日期"><span>至</span><input type="date" v-model="to" aria-label="统计结束日期"><button class="small" :disabled="busy" @click="refresh"><AppIcon name="refresh" :size="14"/>更新</button></div><a v-if="isCenter" :href="exportUrl" class="export-link"><AppIcon name="download" :size="16"/>导出汇总</a></section>
+    <section v-if="stats.metrics.length" class="metric-grid" :style="{'--metric-columns':Math.min(4,stats.metrics.length)}"><article v-for="m in stats.metrics" :key="m.label" :class="['metric-card','tone-'+(m.tone||'blue')]"><div><span>{{m.label}}</span><i aria-hidden="true"></i></div><strong>{{fmt(m.value)}}<small>{{m.unit}}</small></strong></article></section>
+    <section :class="['dashboard-grid',{'single':!isCenter}]"><article class="panel trend-panel"><div class="panel-heading"><h3>{{trendTitle}}</h3><span v-if="stats.daily.length" class="panel-meta">近 {{dailySeries.length}} 天</span></div><div v-if="stats.daily.length" class="bar-chart"><div v-for="point in dailySeries" :key="point.day" class="bar-column" :title="point.day+'：'+point.value+'条'"><span>{{point.value||''}}</span><div :class="{zero:!point.value}" :style="{height:Math.max(3,point.value/dailyMax*112)+'px'}"></div><small>{{point.day.slice(5)}}</small></div></div><div v-else class="empty compact">当前范围暂无记录</div></article><article v-if="isCenter" class="panel"><div class="panel-heading"><h3>风险分布</h3></div><div class="risk-list"><div v-for="level in ['高','中','低']" :key="level"><span class="badge" :class="statusTone(level)">{{level}}风险</span><div class="risk-track"><i :class="statusTone(level)" :style="{width:(stats.risks.find(r=>r.label===level)?.value||0)/Math.max(1,stats.risks.reduce((a,r)=>a+Number(r.value),0))*100+'%'}"></i></div><strong>{{stats.risks.find(r=>r.label===level)?.value||0}}</strong></div></div></article></section>
     <section v-if="stats.byKind?.length" class="panel summary-breakdown"><h3>指令分类与有效回执</h3><div class="command-summary-grid"><article v-for="k in stats.byKind" :key="k.label" class="command-summary"><header><span>{{k.label}}</span><strong>{{k.value}}<small> 条</small></strong></header><dl><div><dt>申请金额</dt><dd>{{money(k.requested)}}</dd></div><div><dt>实际执行</dt><dd>{{money(k.actual)}}</dd></div></dl></article></div><div v-if="stats.byResult?.length" class="receipt-summary"><span>回执结果</span><span v-for="r in stats.byResult" :key="r.label">{{r.label}}<strong>{{r.value}}</strong>条</span></div></section>
    </template>
     <section v-else-if="page==='articles'" class="panel knowledge-panel"><KnowledgeList :articles="rows" :manage="isCenter" @select="openDetail('articles',$event)"/></section>
