@@ -97,6 +97,10 @@ jobs:
           python tests/functional_regressions.py
           python tests/dispatch_deadline_regressions.py
           python tests/lifecycle_regressions.py
+          python tests/identity_regressions.py
+          kill "$server_pid"
+          wait "$server_pid" || true
+          python tests/identity_migration.py
       - name: Preserve test reports
         if: always()
         uses: actions/upload-artifact@v4

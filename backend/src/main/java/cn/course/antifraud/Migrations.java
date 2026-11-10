@@ -45,7 +45,8 @@ public class Migrations implements CommandLineRunner {
                 });
                 if(!applied(3))tx.executeWithoutResult(status->{
                     for(var bank:s.rows("SELECT id,available FROM af_bank ORDER BY id")){
-                        var first=s.optional("SELECT l.* FROM af_ledger l JOIN af_command c ON c.id=l.command_id WHERE c.bank_id=? ORDER BY l.id LIMIT 1",bank.get("id"));
+                        boolean explicitBank=s.count("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='af_ledger' AND COLUMN_NAME='bank_id'")>0;
+                        var first=s.optional("SELECT l.* FROM af_ledger l JOIN af_command c ON c.id=l.command_id WHERE "+(explicitBank?"COALESCE(l.bank_id,c.bank_id)":"c.bank_id")+"=? ORDER BY l.id LIMIT 1",bank.get("id"));
                         var opening=first==null?amount(bank,"available"):amount(first,"available_after").subtract(Reconciliation.delta(first));
                         s.db.update("INSERT INTO af_bank_origin(bank_id,opening,source,created_at) VALUES(?,?,?,?)",bank.get("id"),opening,first==null?"升级余额基线":"历史账本推算",s.now());
                     }
@@ -92,10 +93,48 @@ public class Migrations implements CommandLineRunner {
                     }
                     mark(8);
                 });
+                if(!applied(9)){
+                    column("af_bank","owner_person_id","BIGINT");
+                    column("af_application","applicant_person_id","BIGINT");
+                    column("af_application","payee_bank_id","BIGINT");
+                    column("af_ledger","bank_id","BIGINT");
+                    column("af_alert","dispatch_mode","VARCHAR(30)");
+                    foreignKey("af_bank","fk_bank_person","owner_person_id","af_victim");
+                    foreignKey("af_application","fk_application_person","applicant_person_id","af_victim");
+                    foreignKey("af_application","fk_application_payee","payee_bank_id","af_bank");
+                    foreignKey("af_ledger","fk_ledger_bank","bank_id","af_bank");
+                    index("af_bank","ix_bank_owner","owner_person_id");
+                    index("af_ledger","ix_ledger_bank","bank_id,id");
+                    tx.executeWithoutResult(status->{
+                        s.db.update("UPDATE af_ledger l JOIN af_command c ON c.id=l.command_id SET l.bank_id=c.bank_id WHERE l.bank_id IS NULL");
+                        for(var c:s.rows("SELECT c.* FROM af_command c WHERE c.kind='止付' AND c.state IN ('待下发','已送达','受理中') AND NOT EXISTS(SELECT 1 FROM af_alert_bank x WHERE x.alert_id=c.alert_id AND x.bank_id=c.bank_id) ORDER BY c.id")){
+                            s.db.update("UPDATE af_command SET state='未处理',active_key=NULL WHERE id=?",c.get("id"));
+                            s.db.update("INSERT IGNORE INTO af_notice(command_id,period_version,node,message,created_at) VALUES(?,?,'账户待核验','旧指令缺少线索账户关联依据，请核验、复核后从原指令重发',?)",c.get("id"),c.get("period_version"),s.now());
+                            s.log(null,"账户关系升级","command",num(c,"id"),str(c,"state"),"未处理","未执行的旧止付缺少目标关联依据，转中心核验后复核重发");
+                        }
+                        // Older versions did not record verified account owners or payees. Never infer them from a reporter.
+                        for(var a:s.rows("SELECT a.* FROM af_application a WHERE (a.applicant_person_id IS NULL OR (a.kind='返还' AND a.payee_bank_id IS NULL)) AND a.state IN ('待核定','待受理','审核中','驳回待补','核定通过','已生成解除指令') ORDER BY a.id")){
+                            var pending=s.rows("SELECT * FROM af_command WHERE application_id=? AND state IN ('待下发','已送达','受理中') ORDER BY id",a.get("id"));
+                            boolean decided=str(a,"state").equals("核定通过")||str(a,"state").equals("已生成解除指令");
+                            if(decided&&pending.isEmpty()&&(s.count("SELECT COUNT(*) FROM af_command WHERE application_id=? AND state IN ('已执行','已解除')",a.get("id"))>0||s.count("SELECT COUNT(*) FROM af_command WHERE id=? AND state IN ('已解除','拒绝执行','已作废')",a.get("original_id"))>0))continue; // Preserve completed historical decisions and balances.
+                            for(var c:pending){
+                                if(str(c,"kind").equals("返还"))s.db.update("UPDATE af_command SET reserved=reserved-? WHERE id=?",c.get("requested"),c.get("original_id"));
+                                s.db.update("UPDATE af_command SET state='已取消',active_key=NULL WHERE id=?",c.get("id"));
+                                s.log(null,"账户关系升级","command",num(c,"id"),str(c,"state"),"已取消","旧指令缺少已核验申请人或收款账户；保留历史，请核验后重新申请");
+                            }
+                            s.db.update("UPDATE af_application SET state='已失效',updated_at=? WHERE id=?",s.now(),a.get("id"));
+                            s.log(null,"账户关系升级","application",num(a,"id"),str(a,"state"),"已失效","旧申请未保存户主或本人收款账户核验依据，请核验后重新申请；原审核意见保留");
+                        }
+                        mark(9);
+                    });
+                }
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }
         }
+    }
+    private void foreignKey(String table,String name,String column,String parent){
+        if(s.count("SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME=?",table,name)==0)s.db.execute("ALTER TABLE "+table+" ADD CONSTRAINT "+name+" FOREIGN KEY ("+column+") REFERENCES "+parent+"(id)");
     }
     private void column(String table,String name,String type){
         if(s.count("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?",table,name)==0)s.db.execute("ALTER TABLE "+table+" ADD COLUMN "+name+" "+type);

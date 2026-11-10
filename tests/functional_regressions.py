@@ -6,15 +6,16 @@ from threading import Barrier
 
 
 def run():
+    holder=Client('public3')
     assert sql('SELECT DATABASE()') == VERIFY
     sql('DELETE FROM af_query_limit')
     center, public, pay, pay2, grid, reviewer = map(Client, ['center', 'public1', 'pay1', 'pay2', 'grid1', 'reviewer'])
     tag = 'CLOSURE-' + uuid.uuid4().hex[:8]
     def report(**extra):
-        return center.call('/reports', {'kind': '号码', 'value': '13800000009', 'description': tag, 'requestKey': uuid.uuid4().hex, **extra})
+        return center.call('/reports', {'reporterRelation':'本人受损','kind': '号码', 'value': '13800000009', 'description': tag, 'requestKey': uuid.uuid4().hex, **extra})
     def prepared(result='全额执行', amount=1000):
         r = report(); aid = center.call(f"/reports/{r['id']}")['alert_id']
-        center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 1, 'communityId': 1, 'note': tag})
+        center.verify_accounts(aid,[1,2,3]);center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 1, 'communityId': 1, 'note': tag})
         tasks = center.call(f'/alerts/{aid}/dispatch', {'bankId': 1, 'amount': 1000}); cid = tasks['commandId']
         pay.call(f'/commands/{cid}/accept', {})
         if result=='未处理': center.call(f'/commands/{cid}/simulate', {'node':'超时'})
@@ -35,7 +36,7 @@ def run():
     first, second = report(victimId=victim), report(victimId=victim)
     aid = center.call(f"/reports/{first['id']}")['alert_id']
     owner = sql(f"SELECT owner_id FROM af_report WHERE id={first['id']}")
-    center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 2, 'communityId': 2, 'note': tag})
+    center.verify_accounts(aid,[1,2,3]);center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 2, 'communityId': 2, 'note': tag})
     require(sql(f'SELECT COUNT(*) FROM af_report WHERE alert_id={aid} AND victim_id=2') == '2', '派发前更正同步全部关联举报的当前核验身份')
     require(sql(f"SELECT owner_id FROM af_report WHERE id={first['id']}") == owner, '身份更正不更换原举报提交人')
     require(sql(f"SELECT COUNT(*) FROM af_log WHERE entity_type='alert' AND entity_id={aid} AND action='更正受害人关联'") == '1', '更正保留旧身份和新身份的审计记录')
@@ -135,7 +136,7 @@ def run():
     aid,cid,vid=prepared()
     report(victimId=1)
     require(center.call(f'/alerts/{aid}')['needs_review'], '后续资金业务在预警仍需补充复核时验收')
-    app=public.call('/applications', {'originalId':cid,'kind':'返还','amount':200,'payee':'6222000000000099','reason':tag,'attachments':[public.file()]})['id']
+    app=public.call('/applications', {'originalId':cid,'kind':'返还','amount':200,'payeeBankId':3,'reason':tag,'attachments':[public.file()]})['id']
     center.call(f'/applications/{app}/review', {'decision':'通过','amount':200,'note':tag})
     refund=public.call(f'/applications/{app}')['commands'][0]['id']
     pay.call(f'/commands/{refund}/accept', {})
@@ -143,10 +144,10 @@ def run():
     retried=center.call(f'/commands/{refund}/retry', {'note':tag})['id']
     pay.call(f'/commands/{retried}/accept', {})
     pay.call(f'/commands/{retried}/receipt', {'result':'全额执行','amount':200,'voucher':tag})
-    appeal=public.call('/applications', {'originalId':cid,'kind':'申诉','reason':tag})['id']
+    appeal=holder.call('/applications', {'originalId':cid,'kind':'申诉','reason':tag})['id']
     center.call(f'/applications/{appeal}/review', {'decision':'受理','note':tag})
     center.call(f'/applications/{appeal}/review', {'decision':'成立','note':tag})
-    release=public.call(f'/applications/{appeal}')['commands'][0]['id']
+    release=holder.call(f'/applications/{appeal}')['commands'][0]['id']
     pay.call(f'/commands/{release}/accept', {})
     pay.call(f'/commands/{release}/receipt', {'result':'拒绝执行','amount':0,'reason':tag,'voucher':tag})
     retried=center.call(f'/commands/{release}/retry', {'note':tag})['id']
@@ -168,7 +169,7 @@ def run():
     # Review text up to 2000 characters must survive both business and chained audit storage.
     aid, cid, vid = prepared(); close(aid, vid)
     long_note = '审核意见' * 500
-    app = public.call('/applications', {'originalId': cid, 'kind': '返还', 'amount': 200, 'payee': '6222000000000099', 'reason': tag, 'attachments': [public.file()]})['id']
+    app = public.call('/applications', {'originalId': cid, 'kind': '返还', 'amount': 200, 'payeeBankId':3, 'reason': tag, 'attachments': [public.file()]})['id']
     center.call(f'/applications/{app}/review', {'decision': '通过', 'amount': 200, 'note': long_note+'超'}, expected=400)
     require(public.call(f'/applications/{app}')['state']=='待核定', '超长审核意见在参数层拒绝且不更改状态')
     center.call(f'/applications/{app}/review', {'decision': '通过', 'amount': 200, 'note': long_note})
@@ -181,10 +182,10 @@ def run():
     pay.call(f'/commands/{retry}/accept', {})
     pay.call(f'/commands/{retry}/receipt', {'result':'全额执行','amount':200,'voucher':tag})
     require(center.call(f'/alerts/{aid}')['state']=='已闭环', '闭环后正常返还及失败返还重发仍可办理且不重开预警')
-    appeal = public.call('/applications', {'originalId':cid,'kind':'申诉','reason':tag})['id']
+    appeal = holder.call('/applications', {'originalId':cid,'kind':'申诉','reason':tag})['id']
     center.call(f'/applications/{appeal}/review', {'decision':'受理','note':long_note})
     center.call(f'/applications/{appeal}/review', {'decision':'成立','note':long_note})
-    release=public.call(f'/applications/{appeal}')['commands'][0]['id'];pay.call(f'/commands/{release}/accept', {})
+    release=holder.call(f'/applications/{appeal}')['commands'][0]['id'];pay.call(f'/commands/{release}/accept', {})
     pay.call(f'/commands/{release}/receipt', {'result':'解除成功','amount':0,'voucher':tag})
     require(pay.call(f'/commands/{cid}')['state']=='已解除' and center.call(f'/alerts/{aid}')['state']=='已闭环', '闭环后的申诉及解除独立完成')
 

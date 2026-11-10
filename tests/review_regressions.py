@@ -5,14 +5,15 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode
 
 def run():
+ holder=Client('public3')
  assert sql('SELECT DATABASE()')==VERIFY
  center,pay,public,grid,other=map(Client,['center','pay1','public1','grid1','grid2'])
  tag='REVIEW'+uuid.uuid4().hex[:8]
  def dispatch():
   evidence=center.file()
-  report=center.call('/reports',{'kind':'号码','value':'13800000009','description':tag,'requestKey':str(uuid.uuid4()),'attachments':[evidence]})
+  report=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':tag,'requestKey':str(uuid.uuid4()),'attachments':[evidence]})
   aid=center.call('/reports/'+str(report['id']))['alert_id']
-  center.call(f'/alerts/{aid}/review',{'decision':'通过','victimId':1,'communityId':1,'note':tag})
+  center.verify_accounts(aid,[1]);center.call(f'/alerts/{aid}/review',{'decision':'通过','victimId':1,'communityId':1,'note':tag})
   d=center.call(f'/alerts/{aid}/dispatch',{'bankId':1,'amount':100})
   return aid,d['commandId'],d['visitId'],evidence
  def download(client,file):
@@ -51,7 +52,7 @@ def run():
  sql(f"UPDATE af_command SET accepted_at=DATE_SUB(NOW(),INTERVAL 31 MINUTE) WHERE id={late_receipt}")
  pay.call(f'/commands/{late_receipt}/receipt',{'result':'全额执行','amount':100,'voucher':tag},expected=409)
  require(sql(f'SELECT COUNT(*) FROM af_receipt WHERE command_id={late_receipt}')=='0' and sql('SELECT available FROM af_bank WHERE id=1')==balance,'过期回执不创建回执或变动账本')
- refund=public.call('/applications',{'kind':'返还','originalId':cid,'amount':40,'payee':'6222000000000099','reason':tag,'attachments':[public.file()]})['id']
+ refund=public.call('/applications',{'kind':'返还','originalId':cid,'amount':40,'payeeBankId':3,'reason':tag,'attachments':[public.file()]})['id']
  center.call(f'/applications/{refund}/review',{'decision':'通过','amount':40,'note':tag})
  child=public.call(f'/applications/{refund}')['commands'][0]['id'];pay.call(f'/commands/{child}/accept',{})
  sql(f"UPDATE af_command SET accepted_at=DATE_SUB(NOW(),INTERVAL 31 MINUTE) WHERE id={child}")
@@ -63,9 +64,9 @@ def run():
  retried=center.call(f'/commands/{child}/retry',{'note':tag})['id'];pay.call(f'/commands/{retried}/accept',{})
  pay.call(f'/commands/{retried}/receipt',{'result':'全额执行','amount':40,'voucher':tag})
  pay.call(f'/commands/{retried}/correction',{'result':'全额执行','amount':40,'reason':tag},expected=409)
- appeal=public.call('/applications',{'kind':'申诉','originalId':cid,'reason':tag})['id']
+ appeal=holder.call('/applications',{'kind':'申诉','originalId':cid,'reason':tag})['id']
  center.call(f'/applications/{appeal}/review',{'decision':'受理','note':tag});center.call(f'/applications/{appeal}/review',{'decision':'成立','note':tag})
- release=public.call(f'/applications/{appeal}')['commands'][0]['id'];pay.call(f'/commands/{release}/accept',{})
+ release=holder.call(f'/applications/{appeal}')['commands'][0]['id'];pay.call(f'/commands/{release}/accept',{})
  pay.call(f'/commands/{release}/receipt',{'result':'解除成功','amount':0,'voucher':tag})
  pay.call(f'/commands/{release}/correction',{'result':'解除成功','amount':0,'reason':tag},expected=409)
  require(sql(f'SELECT COUNT(*) FROM af_correction WHERE command_id IN ({retried},{release})')=='0','返还与解除不会留下无法审批的更正申请')
@@ -84,7 +85,7 @@ def run():
  # Canonical URL + keyed fingerprint + exact value search and configuration validation.
  host=tag.lower()+'.example'
  black=center.call('/blacklist',{'kind':'网址','value':f'https://{host}.:443/login','source':tag,'enabled':True})['id']
- report=center.call('/reports',{'kind':'网址','value':f'https://{host}/login','description':tag,'requestKey':str(uuid.uuid4())})['id']
+ report=center.call('/reports',{'reporterRelation':'本人受损','kind':'网址','value':f'https://{host}/login','description':tag,'requestKey':str(uuid.uuid4())})['id']
  alert=center.call('/alerts/'+str(center.call(f'/reports/{report}')['alert_id']))
  require(any(score['details']['hit'] for score in alert['scores']),'显式默认端口与末尾点不会漏掉黑名单')
  found=center.call('/list/blacklist?'+urlencode({'q':f'https://{host}/login'}))

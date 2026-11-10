@@ -31,6 +31,7 @@ public class Api {
     @GetMapping("/alerts/{id}") public Object alert(HttpServletRequest req,@PathVariable long id){return clues.alert(auth.user(req),id);}
     @PostMapping("/alerts/{id}/review") public Object review(HttpServletRequest req,@PathVariable long id,@RequestBody Map<String,Object> b){clues.review(auth.user(req),id,b);return map("ok",true);}
     @PostMapping("/alerts/{id}/dispatch") public Object dispatch(HttpServletRequest req,@PathVariable long id,@RequestBody Map<String,Object> b){return clues.dispatch(auth.user(req),id,b);}
+    @PostMapping("/alerts/{id}/visit") public Object visitOnly(HttpServletRequest req,@PathVariable long id,@RequestBody Map<String,Object> b){return clues.dispatchVisit(auth.user(req),id,b);}
     @PostMapping("/alerts/{id}/close") public Object close(HttpServletRequest req,@PathVariable long id,@RequestBody Map<String,Object> b){clues.close(auth.user(req),id,b);return map("ok",true);}
     @PostMapping("/alerts/{id}/void") public Object voidAlert(HttpServletRequest req,@PathVariable long id,@RequestBody Map<String,Object> b){clues.voidAlert(auth.user(req),id,b);return map("ok",true);}
 }

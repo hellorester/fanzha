@@ -8,9 +8,9 @@ def parallel(actions):
 def advanced():
  center,pay,payb,public,grid,grid2,grid3,pay2,reviewer=map(Client,['center','pay1','pay1','public1','grid1','grid2','grid3','pay2','reviewer'])
  def dispatch(bank=1,amount=1000):
-  r=center.call('/reports',{'kind':'号码','value':'13800000009','description':'自动验收虚构线索：用于异常和并发验证。','requestKey':str(uuid.uuid4())})
+  r=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':'自动验收虚构线索：用于异常和并发验证。','requestKey':str(uuid.uuid4())})
   aid=center.call('/reports/'+str(r['id']))['alert_id']
-  center.call(f'/alerts/{aid}/review',{'decision':'通过','note':'确认虚构对象和社区，测试用。','victimId':1,'communityId':1})
+  center.verify_accounts(aid,[bank]);center.call(f'/alerts/{aid}/review',{'decision':'通过','note':'确认虚构对象和社区，测试用。','victimId':1,'communityId':1})
   return aid,center.call(f'/alerts/{aid}/dispatch',{'bankId':bank,'amount':amount})
  def freeze(bank=1,amount=1000,actual=None):
   a,d=dispatch(bank,amount);c=d['commandId'];pay.call(f'/commands/{c}/accept',{})
@@ -39,7 +39,7 @@ def advanced():
  center.call(f'/alerts/{a}/close',{'note':'模拟住户未能联系，中心确认记录异常处理决定。'})
  center.call(f'/alerts/{a}/review',{'decision':'通过','note':'已闭环不可再审核'},expected=409)
  # Reserve two refunds concurrently against the same remaining frozen amount.
- def refund(n):return public.call('/applications',{'kind':'返还','originalId':cid,'amount':800,'payee':'virtual-account','reason':'并发核定测试 '+str(n),'attachments':[public.file()]})['id']
+ def refund(n):return public.call('/applications',{'kind':'返还','originalId':cid,'amount':800,'payeeBankId':3,'reason':'并发核定测试 '+str(n),'attachments':[public.file()]})['id']
  r1,r2=refund(1),refund(2);centerb=Client('center')
  rs=parallel([lambda:race(center,f'/applications/{r1}/review',{'decision':'通过','amount':800,'note':'并发核定 A'}),lambda:race(centerb,f'/applications/{r2}/review',{'decision':'通过','amount':800,'note':'并发核定 B'})])
  require(sorted(rs)==[200,400],'并发核定不能超占冻结余额')
@@ -79,7 +79,7 @@ def advanced():
  rc=center.call(f'/commands/{lc}/retry',{'note':'机构超时后重新核实并下发。'})['id']
  require(rc!=lc and pay.call(f'/commands/{rc}')['expires_at'] is None,'超时重发新指令未提前开始冻结')
  # Strict file access is based on bound record scope, even after uploader changes role.
- fileid=public.file();r=public.call('/reports',{'kind':'号码','value':'13800000008','description':'附件访问权限验证','requestKey':str(uuid.uuid4()),'attachments':[fileid]})
+ fileid=public.file();r=public.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000008','description':'附件访问权限验证','requestKey':str(uuid.uuid4()),'attachments':[fileid]})
  Client('public2').call('/attachments/'+fileid,expected=404);pay2.call('/attachments/'+fileid,expected=404)
  # Pagination / role scopes / config and knowledge publication.
  for who,resource in [(center,'reports'),(center,'alerts'),(pay,'commands'),(grid,'visits'),(public,'applications')]:

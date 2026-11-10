@@ -23,6 +23,11 @@ class Client:
   if isinstance(value,dict) and value.get('csrf'):self.csrf=value['csrf']
   results.append({'actor':self.name,'path':path,'status':status,'ms':round(elapsed,2)})
   return value
+ def verify_accounts(self,alert_id,bank_ids=(1,)):
+  """Explicit fixture setup: verified evidence must precede human review and dispatch."""
+  alert=self.call(f'/alerts/{alert_id}');linked={t['bank_id'] for t in alert['targets']}
+  for bank_id in bank_ids:
+   if bank_id not in linked:self.call(f'/alerts/{alert_id}/accounts',{'bankId':bank_id,'reportId':alert['reports'][0]['id'],'note':'验收材料已核对线索与指定资金账户关系'})
  def file(self):
   boundary=uuid.uuid4().hex
   data=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="proof.txt"\r\nContent-Type: text/plain\r\n\r\nCourse demonstration evidence\r\n--{boundary}--\r\n').encode()
@@ -31,12 +36,13 @@ def require(condition,label):
  if not condition:raise AssertionError(label)
  results.append({'check':label,'pass':True})
 def flow():
+ holder=Client('public3')
  public,center,pay,grid,pay2,other=map(Client,['public1','center','pay1','grid1','pay2','public2'])
  anon=Client();anon.call('/alerts',expected=401)
  public.call('/alerts',expected=403)
- report=public.call('/reports',{'kind':'账户','value':'6222000000000001','description':'课程演示：接到冒充客服退款电话后被要求向陌生账户转账。','amount':'6000','transactionTime':'23:30','remote':True,'requestKey':str(uuid.uuid4()),'attachments':[public.file()]})
+ report=public.call('/reports',{'reporterRelation':'本人受损','kind':'账户','value':'6222000000000001','description':'课程演示：接到冒充客服退款电话后被要求向陌生账户转账。','amount':'6000','transactionTime':'23:30','remote':True,'requestKey':str(uuid.uuid4()),'attachments':[public.file()]})
  detail=public.call('/reports/'+str(report['id']));aid=detail['alert_id'];alert=center.call('/alerts/'+str(aid));require(alert['score']==79,'五因子评分79分');other.call('/reports/'+str(report['id']),expected=404)
- center.call(f'/alerts/{aid}/review',{'decision':'通过','note':'核对演示材料，确认风险和受害人归属。','victimId':1,'communityId':1,'level':'高'})
+ center.verify_accounts(aid,[1]);center.call(f'/alerts/{aid}/review',{'decision':'通过','note':'核对演示材料，确认风险和受害人归属。','victimId':1,'communityId':1,'level':'高'})
  dispatch=center.call(f'/alerts/{aid}/dispatch',{'bankId':1,'amount':'6000'})
  repeated=center.call(f'/alerts/{aid}/dispatch',{'bankId':1,'amount':'6000'});require(dispatch['commandId']==repeated['commandId'] and dispatch['visitId']==repeated['visitId'],'重复派发复用双端单号')
  cid,vid=dispatch['commandId'],dispatch['visitId']
@@ -53,23 +59,23 @@ def flow():
  grid.call(f'/visits/{vid}/feedback',{'process':'已核对聊天和交易材料，并讲解验证码及共享屏幕风险。','result':'已完成','attachments':[grid.file()]})
  center.call(f'/alerts/{aid}/close',{'note':'两端有效反馈已核对，完成本轮协同处置。'})
  require(center.call(f'/alerts/{aid}')['state']=='已闭环','主线两端反馈后闭环')
- refund=public.call('/applications',{'kind':'返还','originalId':cid,'amount':'2000','payee':'6222000000000099','reason':'提供课程演示证明，申请返还已确认被骗资金。','attachments':[public.file()]})
+ refund=public.call('/applications',{'kind':'返还','originalId':cid,'amount':'2000','payeeBankId':3,'reason':'提供课程演示证明，申请返还已确认被骗资金。','attachments':[public.file()]})
  rid=refund['id'];center.call(f'/applications/{rid}/review',{'decision':'通过','amount':'7000','note':'超额测试'},expected=400)
  center.call(f'/applications/{rid}/review',{'decision':'通过','amount':'2000','note':'核定材料齐全，金额未超过剩余冻结。'})
  refundDetail=public.call(f'/applications/{rid}');rcid=refundDetail['commands'][0]['id'];pay.call(f'/commands/{rcid}/accept',{})
  pay.call(f'/commands/{rcid}/receipt',{'result':'部分执行','amount':'1500','reason':'课程演示：部分材料金额仍待确认。','voucher':'DEMO-RETURN'})
  origin=pay.call(f'/commands/{cid}');require(float(origin['remaining'])==4500 and float(origin['reserved'])==0 and float(origin['returned'])==1500,'部分返还释放剩余占用且账目守恒')
- appeal=public.call('/applications',{'kind':'申诉','originalId':cid,'reason':'课程演示：申请核验剩余资金冻结是否有误。','attachments':[]});apid=appeal['id']
+ appeal=holder.call('/applications',{'kind':'申诉','originalId':cid,'reason':'课程演示：申请核验剩余资金冻结是否有误。','attachments':[]});apid=appeal['id']
  center.call(f'/applications/{apid}/review',{'decision':'受理','note':'已接收申诉材料。'})
  center.call(f'/applications/{apid}/review',{'decision':'补正','note':'请补充账户权属材料。'})
- public.call(f'/applications/{apid}/supplement',{'reason':'补充模拟账户权属证明。','attachments':[public.file()]})
+ holder.call(f'/applications/{apid}/supplement',{'reason':'补充模拟账户权属证明。','attachments':[holder.file()]})
  center.call(f'/applications/{apid}/review',{'decision':'受理','note':'补正材料已收到。'})
  center.call(f'/applications/{apid}/review',{'decision':'成立','note':'课程模拟核验成立，生成解除指令。'})
  require(pay.call(f'/commands/{cid}')['state']=='生效中','申诉成立不提前解冻')
- release=public.call(f'/applications/{apid}')['commands'][0]['id'];pay.call(f'/commands/{release}/accept',{});pay.call(f'/commands/{release}/receipt',{'result':'解除成功','amount':0,'voucher':'DEMO-RELEASE'})
+ release=holder.call(f'/applications/{apid}')['commands'][0]['id'];pay.call(f'/commands/{release}/accept',{});pay.call(f'/commands/{release}/receipt',{'result':'解除成功','amount':0,'voucher':'DEMO-RELEASE'})
  require(pay.call(f'/commands/{cid}')['state']=='已解除','解除有效回执同步原止付')
- public.call('/applications',{'kind':'返还','originalId':cid,'amount':100,'payee':'demo','reason':'解除后申请','attachments':[]},expected=409)
- anonymous=anon.call('/reports',{'kind':'号码','value':'13800000009','description':'匿名模拟风险来电，请协助核查。','requestKey':str(uuid.uuid4())})
+ public.call('/applications',{'kind':'返还','originalId':cid,'amount':100,'payeeBankId':3,'reason':'解除后申请','attachments':[]},expected=409)
+ anonymous=anon.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':'匿名模拟风险来电，请协助核查。','requestKey':str(uuid.uuid4())})
  anon.call('/anonymous/query',{'code':anonymous['code'],'token':'wrong'},expected=404)
  summary=anon.call('/anonymous/query',{'code':anonymous['code'],'token':anonymous['queryToken']});require('score' not in summary and 'victim_id' not in summary,'匿名凭证查询仅返回脱敏摘要')
  stats=center.call('/stats');require(len(stats['metrics'])>=4,'统计来源于业务数据库')

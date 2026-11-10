@@ -23,6 +23,7 @@ function keys(e){if(e.key==='Escape'&&!props.busy)emit('close');if(e.key==='Tab'
     <div v-if="error" class="error-box" role="alert">{{error}}</div>
     <button type="submit" class="primary account-submit" :disabled="busy">{{busy?'正在登录…':'登录'}}</button>
    </form>
+   <div v-if="identity==='PUBLIC'" class="login-quick"><span>受害人 / 冻结账户户主</span><button class="text-button" :disabled="busy" @click="$emit('account','public2')">居民二</button><button class="text-button" :disabled="busy" @click="$emit('account','public3')">户主三</button></div>
    <div class="login-quick"><span>{{selected.label}}</span><button class="text-button" :disabled="busy" @click="$emit('account',selected.account)">填入快捷账号<AppIcon name="arrow" :size="14"/></button></div>
   </section>
  </div>

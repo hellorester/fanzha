@@ -17,7 +17,7 @@ public class Reconciliation {
         BigDecimal amount=amount(event,"amount");
         return switch(str(event,"action")){
             case "止付全额执行","止付部分执行","回执更正" -> amount.negate();
-            case "解除解除成功","到期解除" -> amount;
+            case "解除解除成功","到期解除","返还入账" -> amount;
             case "止付拒绝执行","返还全额执行","返还部分执行","返还拒绝执行","解除拒绝执行" -> BigDecimal.ZERO;
             default -> throw new IllegalArgumentException("未知资金操作："+str(event,"action"));
         };
@@ -31,13 +31,19 @@ public class Reconciliation {
         for(var bank:banks){
             long bankId=num(bank,"id");List<Map<String,Object>> issues=new ArrayList<>();
             var commands=s.rows("SELECT * FROM af_command WHERE bank_id=? ORDER BY id",bankId);
-            var events=s.rows("SELECT l.* FROM af_ledger l JOIN af_command c ON c.id=l.command_id WHERE c.bank_id=? ORDER BY l.id",bankId);
+            var events=s.rows("SELECT l.* FROM af_ledger l JOIN af_command c ON c.id=l.command_id WHERE l.bank_id=? ORDER BY l.id",bankId);
             var receipts=s.rows("SELECT r.* FROM af_receipt r JOIN af_command c ON c.id=r.command_id WHERE c.bank_id=? ORDER BY r.command_id,r.version",bankId);
             Map<Long,List<Map<String,Object>>> eventsByCommand=group(events,"command_id"),receiptsByCommand=group(receipts,"command_id"),childrenByOriginal=group(commands,"original_id");
             Set<Long> roots=new HashSet<>();for(var command:commands)if(str(command,"kind").equals("止付"))roots.add(num(command,"id"));
             if(bank.get("opening")==null)issue(issues,"缺少期初核验基线",bankId,null,null);
-            BigDecimal expected=amount(bank,"opening"),frozen=BigDecimal.ZERO,outflow=BigDecimal.ZERO;
+            BigDecimal expected=amount(bank,"opening"),frozen=BigDecimal.ZERO,outflow=BigDecimal.ZERO,inflow=BigDecimal.ZERO;
             for(var event:events){
+                if(str(event,"action").equals("返还入账")){
+                    inflow=inflow.add(amount(event,"amount"));
+                    var payment=s.one("SELECT c.actual,a.payee_bank_id FROM af_command c JOIN af_application a ON a.id=c.application_id WHERE c.id=?",event.get("command_id"));
+                    equal(issues,"返还入账与执行金额不符",num(event,"command_id"),amount(payment,"actual"),amount(event,"amount"));
+                    if(num(payment,"payee_bank_id")!=bankId)issue(issues,"返还收款账户不一致",num(event,"command_id"),null,null);
+                }
                 try{expected=expected.add(delta(event));equal(issues,"账本余额不连续",num(event,"id"),expected,amount(event,"available_after"));}
                 catch(IllegalArgumentException e){issue(issues,"未知账本动作",num(event,"id"),null,null);}
             }
@@ -60,6 +66,10 @@ public class Reconciliation {
                     BigDecimal expectedAmount=amount(receipt,"amount").subtract(i==0?BigDecimal.ZERO:amount(history.get(i-1),"amount"));
                     equal(issues,"回执与流水金额不符",num(event,"id"),expectedAmount,amount(event,"amount"));
                 }
+                if(kind.equals("返还")&&amount(command,"actual").signum()>0){
+                    var app=s.one("SELECT payee_bank_id FROM af_application WHERE id=?",command.get("application_id"));
+                    if(num(app,"payee_bank_id")>0){var incoming=s.rows("SELECT * FROM af_ledger WHERE command_id=? AND action='返还入账'",id);if(incoming.size()!=1)issue(issues,"返还收款流水缺失或重复",id,null,null);else{equal(issues,"返还转出与入账不一致",id,amount(command,"actual"),amount(incoming.getFirst(),"amount"));if(num(incoming.getFirst(),"bank_id")!=num(app,"payee_bank_id"))issue(issues,"收款流水账户不一致",id,null,null);}}
+                }
                 if(kind.equals("止付")){
                     BigDecimal returned=BigDecimal.ZERO,reserved=BigDecimal.ZERO,released=BigDecimal.ZERO;
                     for(var child:childrenByOriginal.getOrDefault(id,List.of())){
@@ -80,8 +90,8 @@ public class Reconciliation {
                     if(!roots.contains(num(command,"original_id")))issue(issues,"关联原止付账户不一致或缺失",id,null,null);
                 }
             }
-            equal(issues,"账户总资金不守恒",bankId,amount(bank,"opening").subtract(outflow),amount(bank,"available").add(frozen));
-            issueCount+=issues.size();accounts.add(map("id",bankId,"account",mask(s.decrypt(bank.get("number_enc"))),"opening",bank.get("opening"),"baseline",bank.get("baseline_source"),"available",bank.get("available"),"expectedAvailable",expected,"frozen",frozen,"outflow",outflow,"ledgerCount",events.size(),"ok",issues.isEmpty(),"issues",issues));
+            equal(issues,"账户总资金不守恒",bankId,amount(bank,"opening").add(inflow).subtract(outflow),amount(bank,"available").add(frozen));
+            issueCount+=issues.size();accounts.add(map("id",bankId,"account",mask(s.decrypt(bank.get("number_enc"))),"opening",bank.get("opening"),"baseline",bank.get("baseline_source"),"available",bank.get("available"),"expectedAvailable",expected,"frozen",frozen,"outflow",outflow,"inflow",inflow,"ledgerCount",events.size(),"ok",issues.isEmpty(),"issues",issues));
         }
         return map("checkedAt",s.now(),"ok",issueCount==0,"issueCount",issueCount,"accounts",accounts);
     }

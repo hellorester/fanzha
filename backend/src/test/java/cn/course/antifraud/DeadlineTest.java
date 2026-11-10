@@ -31,7 +31,7 @@ class DeadlineTest {
             var command=map("id",1L,"kind","止付","state",state,"created_at",base.minusHours(2),"accepted_at",state.equals("受理中")?base:null,"period_version",1);
             if(state.equals("已送达"))command.put("created_at",base);
             var now=base.plusMinutes(30).plusSeconds(offset);
-            new Commands(support(db,command,now),cfg,mock(Files.class)).scanOne(1,base,null,false);
+            new Commands(support(db,command,now),cfg,mock(Files.class),mock(Relationships.class)).scanOne(1,base,null,false);
             verify(db,offset<0?never():times(1)).update("UPDATE af_command SET state='未处理',active_key=NULL WHERE id=?",1L);
         }
     }
@@ -40,7 +40,7 @@ class DeadlineTest {
         for(String state:List.of("生效中","已延期")){
             var db=mock(JdbcTemplate.class);var command=map("id",1L,"kind","止付","bank_id",1L,"state",state,"expires_at",base,"remaining",100,"period_version",1);
             assertEquals(base,Commands.deadline(command,30));
-            new Commands(support(db,command,base.plusSeconds(offset)),mock(Clues.class),mock(Files.class)).scanOne(1,base.minusMinutes(1),null,false);
+            new Commands(support(db,command,base.plusSeconds(offset)),mock(Clues.class),mock(Files.class),mock(Relationships.class)).scanOne(1,base.minusMinutes(1),null,false);
             verify(db,offset<0?never():times(1)).update(eq("UPDATE af_bank SET available=? WHERE id=?"),eq(money(1100)),eq(1));
         }
     }

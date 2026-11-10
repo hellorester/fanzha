@@ -9,22 +9,24 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def run():
+    holder=Client('public3')
     assert sql('SELECT DATABASE()') == VERIFY
     sql('DELETE FROM af_query_limit')
     center, reviewer, pay, public, grid = map(Client, ['center','reviewer','pay1','public1','grid1'])
     tag = 'LIFECYCLE-' + uuid.uuid4().hex[:8]
 
     def prepared(result='全额执行'):
-        r=center.call('/reports',{'kind':'号码','value':'13800000009','description':tag,'requestKey':uuid.uuid4().hex})
+        r=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':tag,'requestKey':uuid.uuid4().hex})
         aid=center.call(f"/reports/{r['id']}")['alert_id']
-        center.call(f'/alerts/{aid}/review',{'decision':'通过','victimId':1,'communityId':1,'note':tag})
+        center.verify_accounts(aid,[1]);center.call(f'/alerts/{aid}/review',{'decision':'通过','victimId':1,'communityId':1,'note':tag})
         task=center.call(f'/alerts/{aid}/dispatch',{'bankId':1,'amount':100})
         cid=task['commandId'];pay.call(f'/commands/{cid}/accept',{})
         if result:pay.call(f'/commands/{cid}/receipt',{'result':result,'amount':0 if result=='拒绝执行' else 100,'reason':tag,'voucher':tag})
         return aid,cid,task['visitId']
 
     def apply(cid,kind='返还'):
-        return public.call('/applications',{'kind':kind,'originalId':cid,'amount':30,'reason':tag,'payee':'6222000000000099','attachments':[public.file()]})['id']
+        applicant=holder if kind=='申诉' else public
+        return applicant.call('/applications',{'kind':kind,'originalId':cid,'amount':30,'reason':tag,'payeeBankId':3,'attachments':[applicant.file()]})['id']
 
     def correction(cid,result='部分执行',amount=80):
         pay.call(f'/commands/{cid}/correction',{'result':result,'amount':amount,'reason':tag})
@@ -66,7 +68,7 @@ def run():
 
     # A correction filed before an additional clue must recheck approval at review time.
     aid,cid,vid=prepared('拒绝执行');x=correction(cid,'全额执行',100)
-    merged=center.call('/reports',{'kind':'号码','value':'13800000009','description':tag,'victimId':1,'requestKey':uuid.uuid4().hex})
+    merged=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':tag,'victimId':1,'requestKey':uuid.uuid4().hex})
     require(center.call(f"/reports/{merged['id']}")['alert_id']==aid,'追加线索实际归并到受审查的预警')
     center.call(f'/corrections/{x}/review',{'approve':True,'note':tag},expected=409)
     require(sql(f'SELECT state FROM af_command WHERE id={cid}')=='拒绝执行','更正不能绕过待补充复核形成新冻结')
@@ -112,24 +114,24 @@ def run():
             actor=pay if entry!='retry' else center
             data={'result':'全额执行','amount':30,'voucher':tag} if entry=='receipt' else {'note':tag}
             actor.call(f'/commands/{child}/{entry}',data,expected=409)
-        elif entry=='supplement':public.call(f'/applications/{appeal}/supplement',{'reason':tag,'attachments':[public.file()]},expected=409)
+        elif entry=='supplement':holder.call(f'/applications/{appeal}/supplement',{'reason':tag,'attachments':[holder.file()]},expected=409)
         elif entry=='review':center.call(f'/applications/{refund}/review',{'decision':'通过','amount':30,'note':tag},expected=409)
         elif entry=='extend':center.call(f'/commands/{cid}/extend',{'note':tag},expected=409)
-        else:public.call('/applications',{'kind':'申诉','originalId':cid,'reason':tag},expected=409)
+        else:holder.call('/applications',{'kind':'申诉','originalId':cid,'reason':tag},expected=409)
         require(sql(f'SELECT state FROM af_command WHERE id={cid}')=='已解除' and sql(f"SELECT COUNT(*) FROM af_ledger WHERE command_id={cid} AND action='到期解除'")=='1',entry+'触发到期并提交唯一释放流水')
-        require(public.call(f'/applications/{appeal}')['state']=='已失效','待补材料的申诉随冻结到期结束')
+        require(holder.call(f'/applications/{appeal}')['state']=='已失效','待补材料的申诉随冻结到期结束')
         expected='核定通过' if child else '已失效'
         require(public.call(f'/applications/{refund}')['state']==expected,'保留已核定决定，尚未核定的申请转失效')
 
     # Identity changes cannot be used to continue someone else's subject-linked appeal.
     aid,cid,vid=prepared();app=apply(cid,'申诉')
     center.call(f'/applications/{app}/review',{'decision':'受理','note':tag});center.call(f'/applications/{app}/review',{'decision':'补正','note':tag})
-    uid=int(sql("SELECT id FROM af_user WHERE username='public1'"))
+    uid=int(sql("SELECT id FROM af_user WHERE username='public3'"))
     sql(f'UPDATE af_user SET verified=FALSE,victim_id=NULL WHERE id={uid}')
-    try:public.call(f'/applications/{app}/supplement',{'reason':tag,'attachments':[]},expected=404)
-    finally:sql(f'UPDATE af_user SET verified=TRUE,victim_id=1 WHERE id={uid}')
-    public.call(f'/applications/{app}/supplement',{'reason':tag,'attachments':[public.file()]})
-    require(public.call(f'/applications/{app}')['state']=='待受理','实名与原受害人关联恢复后可以正常补正')
+    try:holder.call(f'/applications/{app}/supplement',{'reason':tag,'attachments':[]},expected=404)
+    finally:sql(f'UPDATE af_user SET verified=TRUE,victim_id=3 WHERE id={uid}')
+    holder.call(f'/applications/{app}/supplement',{'reason':tag,'attachments':[holder.file()]})
+    require(holder.call(f'/applications/{app}')['state']=='待受理','实名与原账户户主关联恢复后可以正常补正')
 
     grid_name='lifegrid'+uuid.uuid4().hex[:8]
     center.call('/users',{'username':grid_name,'password':'Demo2026!','displayName':'生命周期验收网格员','role':'GRID','communityId':1,'enabled':True,'verified':False})

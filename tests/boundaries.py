@@ -18,7 +18,7 @@ def run():
  r3=fixture(base+datetime.timedelta(hours=24,seconds=1));a3=process(r3);require(a3!=a,'归并超过24小时一秒创建新预警')
  anon1=process(fixture(base,None));anon2=process(fixture(base,None));require(anon1!=anon2,'未知主体线索不会因值相同自动归并')
  different=process(fixture(base,2));require(different!=a,'不同主体不归并')
- center.call(f'/alerts/{a3}/review',{'decision':'通过','note':'时间窗验证后核实派发。','victimId':victim,'communityId':1})
+ center.verify_accounts(a3,[1]);center.call(f'/alerts/{a3}/review',{'decision':'通过','note':'时间窗验证后核实派发。','victimId':victim,'communityId':1})
  # Both HTTP requests must observe the same two persisted business records.
  with ThreadPoolExecutor(max_workers=2) as pool:
   futures=[pool.submit(c.call,f'/alerts/{a3}/dispatch',{'bankId':1,'amount':1000}) for c in (center,center2)];dispatches=[x.result() for x in futures]
@@ -27,15 +27,15 @@ def run():
  detail=center.call(f'/alerts/{a3}');require(detail['needs_review'] and len(detail['commands'])==1 and len(detail['visits'])==1,'追加线索保留已派发任务且标记补充复核')
  center.call(f'/alerts/{a3}/dispatch',{'bankId':1,'amount':1000},expected=409)
  center.call(f'/alerts/{a3}/review',{'decision':'通过','note':'补充复核，保留原关联。','victimId':1,'communityId':1},expected=400)
- center.call(f'/alerts/{a3}/review',{'decision':'通过','note':'补充复核，保留原关联。','victimId':victim,'communityId':1})
+ center.verify_accounts(a3,[1]);center.call(f'/alerts/{a3}/review',{'decision':'通过','note':'补充复核，保留原关联。','victimId':victim,'communityId':1})
  # Void is an audited transaction, never physical deletion.
  center.call(f'/alerts/{a3}/void',{'note':'验收用虚构任务，尚未执行，联动作废。'})
  require(pay.call('/commands/'+str(dispatches[0]['commandId']))['state']=='已作废','作废同步尚未执行的机构指令')
  center.call(f'/alerts/{a3}/dispatch',{'bankId':1,'amount':1000},expected=409)
  require(process(fixture(base+datetime.timedelta(hours=26)))!=a3,'作废预警不再吸收新线索')
  # Known independent victim with a complete void-free alert for failure injection.
- report=center.call('/reports',{'kind':'号码','value':'13800000009','description':'事务回滚验收虚构举报','requestKey':str(uuid.uuid4())})
- failed_a=center.call('/reports/'+str(report['id']))['alert_id'];center.call(f'/alerts/{failed_a}/review',{'decision':'通过','note':'故障注入前复核','victimId':1,'communityId':1})
+ report=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':'事务回滚验收虚构举报','requestKey':str(uuid.uuid4())})
+ failed_a=center.call('/reports/'+str(report['id']))['alert_id'];center.verify_accounts(failed_a,[1]);center.call(f'/alerts/{failed_a}/review',{'decision':'通过','note':'故障注入前复核','victimId':1,'communityId':1})
  sql('RENAME TABLE af_visit TO af_visit_verification_guard;')
  try:center.call(f'/alerts/{failed_a}/dispatch',{'bankId':1,'amount':1000},expected=500)
  finally:sql('RENAME TABLE af_visit_verification_guard TO af_visit;')
@@ -45,13 +45,13 @@ def run():
  # Score insertion failure retains submission; retry recovers the original report.
  sql('RENAME TABLE af_score TO af_score_verification_guard;')
  try:
-  failed=center.call('/reports',{'kind':'号码','value':'13800000009','description':'算法故障注入虚构材料','requestKey':str(uuid.uuid4())});require(failed['processing']=='人工待研判','算法异常时举报受理成功并转人工队列')
+  failed=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':'算法故障注入虚构材料','requestKey':str(uuid.uuid4())});require(failed['processing']=='人工待研判','算法异常时举报受理成功并转人工队列')
  finally:sql('RENAME TABLE af_score_verification_guard TO af_score;')
  fid=failed['id'];require(center.call('/reports/'+str(fid))['alert_id'] is None,'评分失败事务未留下孤立预警')
  center.call(f'/reports/{fid}/retry',{});require(center.call('/reports/'+str(fid))['processing']=='已研判','故障恢复重试处理原举报')
  # Matching failure must not silently be interpreted as a blacklist miss.
  sql('RENAME TABLE af_blacklist TO af_blacklist_verification_guard;')
- try:failed_match=center.call('/reports',{'kind':'号码','value':'13800000009','description':'匹配服务异常验收','requestKey':str(uuid.uuid4())});require(failed_match['processing']=='人工待研判','名单匹配异常与未命中分别处理')
+ try:failed_match=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':'匹配服务异常验收','requestKey':str(uuid.uuid4())});require(failed_match['processing']=='人工待研判','名单匹配异常与未命中分别处理')
  finally:sql('RENAME TABLE af_blacklist_verification_guard TO af_blacklist;')
  center.call(f"/reports/{failed_match['id']}/retry",{})
  # Login errors and disabling existing sessions.

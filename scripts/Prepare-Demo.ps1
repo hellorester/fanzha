@@ -66,5 +66,5 @@ try {
  $files=Get-ChildItem -LiteralPath $baseline -File | ForEach-Object {@{path=$_.Name;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}}
  @{kind='course-demo-baseline';createdAt=(Get-Date).ToString('o');database=$demoDatabase;cases=$levels;files=@($files)} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $baseline 'manifest.json') -Encoding UTF8
  @{backup=$baseline;database=$demoDatabase;port=$Port} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $LocalRoot 'demo-baseline.json') -Encoding UTF8
- Write-Output ('初始快照已保存：'+$baseline+'。固定9个账号、4个初始账户、低中高3条待核实线索；尚无资金占用。运行 scripts/Start-Demo.ps1 可恢复并启动。')
+ Write-Output ('初始快照已保存：'+$baseline+'。固定10个账号、4个初始账户、低中高3条待核实线索；尚无资金占用。运行 scripts/Start-Demo.ps1 可恢复并启动。')
 } finally {if($server -and !$server.HasExited){$server.Kill();$server.WaitForExit()};Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue}

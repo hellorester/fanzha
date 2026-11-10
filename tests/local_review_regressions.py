@@ -33,7 +33,7 @@ def run():
     def dispatch():
         report = center.call('/reports', body())
         aid = center.call(f"/reports/{report['id']}")['alert_id']
-        center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 1, 'communityId': 1, 'note': tag})
+        center.verify_accounts(aid,[1]);center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 1, 'communityId': 1, 'note': tag})
         command = center.call(f'/alerts/{aid}/dispatch', {'bankId': 1, 'amount': 100})['commandId']
         pay.call(f'/commands/{command}/accept', {})
         return aid, command

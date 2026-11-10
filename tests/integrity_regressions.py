@@ -10,7 +10,7 @@ def run():
     center, public, other, pay, pay2 = map(Client, ['center', 'public1', 'public2', 'pay1', 'pay2'])
     tag = 'INTEGRITY' + uuid.uuid4().hex[:8]
     def report(client, files=None):
-        return client.call('/reports', {'kind': '号码', 'value': '13800000009', 'description': tag, 'requestKey': uuid.uuid4().hex, 'attachments': files or []})
+        return client.call('/reports', {'reporterRelation':'本人受损','kind': '号码', 'value': '13800000009', 'description': tag, 'requestKey': uuid.uuid4().hex, 'attachments': files or []})
     def download(client, attachment):
         with client.opener.open(BASE + '/attachments/' + attachment) as response:
             return response.read()
@@ -38,7 +38,7 @@ def run():
         require(public.call(f"/reports/{own['id']}")['id'] == own['id'], '停用匿名查询凭证不影响本人登录查询')
         # A center report linked to the same victim must not become a public user's report.
         created = report(center, [center.file()]); aid = center.call(f"/reports/{created['id']}")['alert_id']
-        center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 1, 'communityId': 1, 'note': tag})
+        center.verify_accounts(aid,[1]);center.call(f'/alerts/{aid}/review', {'decision': '通过', 'victimId': 1, 'communityId': 1, 'note': tag})
         public.call(f"/reports/{created['id']}", expected=404)
         command = center.call(f'/alerts/{aid}/dispatch', {'bankId': 1, 'amount': 100})['commandId']
         pay.call(f'/commands/{command}/accept', {})
@@ -112,7 +112,7 @@ def attachment_races(center, tag):
             time.sleep(.1)
         raise AssertionError(label)
     def report(file, key, expected=200):
-        return center.call('/reports', {'kind': '号码', 'value': '13800000009', 'description': tag, 'requestKey': key, 'attachments': [file]}, expected=expected)
+        return center.call('/reports', {'reporterRelation':'本人受损','kind': '号码', 'value': '13800000009', 'description': tag, 'requestKey': key, 'attachments': [file]}, expected=expected)
     def locked(name): return sql(f"SELECT IS_USED_LOCK('{name}') IS NOT NULL") == '1'
     def waiting(file):
         return int(sql("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID<>CONNECTION_ID() AND INFO LIKE '%af_attachment%' AND INFO LIKE '%FOR UPDATE%' AND INFO LIKE '%"+file+"%'"))

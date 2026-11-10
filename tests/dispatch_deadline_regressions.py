@@ -9,15 +9,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def run():
+    holder=Client('public3')
     assert sql('SELECT DATABASE()')==VERIFY
     sql('DELETE FROM af_query_limit')
     center,reviewer,public,pay=map(Client,['center','reviewer','public1','pay1'])
     tag='DISPATCH-DEADLINE-'+uuid.uuid4().hex[:8]
 
     def prepared(receipt=True,extended=False,accept=True):
-        report=center.call('/reports',{'kind':'号码','value':'13800000009','description':tag,'requestKey':uuid.uuid4().hex})
+        report=center.call('/reports',{'reporterRelation':'本人受损','kind':'号码','value':'13800000009','description':tag,'requestKey':uuid.uuid4().hex})
         aid=center.call(f"/reports/{report['id']}")['alert_id']
-        center.call(f'/alerts/{aid}/review',{'decision':'通过','victimId':1,'communityId':1,'note':tag})
+        center.verify_accounts(aid,[1,3]);center.call(f'/alerts/{aid}/review',{'decision':'通过','victimId':1,'communityId':1,'note':tag})
         task=center.call(f'/alerts/{aid}/dispatch',{'bankId':1,'amount':1000});cid=task['commandId']
         if accept:pay.call(f'/commands/{cid}/accept',{})
         if receipt:pay.call(f'/commands/{cid}/receipt',{'result':'全额执行','amount':1000,'voucher':tag})
@@ -49,9 +50,9 @@ def run():
         reused=center.call(f'/alerts/{aid}/dispatch',{'bankId':1,'amount':500})
         require(reused['reused'] and reused['commandId']==cid, '有效期内的普通及延期止付仍复用原单号')
         # Leave both refund reservation and pending release to verify their expiry cleanup.
-        refund=public.call('/applications',{'originalId':cid,'kind':'返还','amount':200,'payee':'6222000000000099','reason':tag,'attachments':[public.file()]})['id']
+        refund=public.call('/applications',{'originalId':cid,'kind':'返还','amount':200,'payeeBankId':3,'reason':tag,'attachments':[public.file()]})['id']
         center.call(f'/applications/{refund}/review',{'decision':'通过','amount':200,'note':tag})
-        appeal=public.call('/applications',{'originalId':cid,'kind':'申诉','reason':tag})['id']
+        appeal=holder.call('/applications',{'originalId':cid,'kind':'申诉','reason':tag})['id']
         center.call(f'/applications/{appeal}/review',{'decision':'受理','note':tag})
         center.call(f'/applications/{appeal}/review',{'decision':'成立','note':tag})
         sql(f'UPDATE af_command SET expires_at=DATE_SUB(NOW(),INTERVAL 1 SECOND) WHERE id={cid}')
