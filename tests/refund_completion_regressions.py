@@ -53,10 +53,30 @@ def run():
         require(data['state'] == application_state and data['fundsProgress']['state'] == state
             and float(data['fundsProgress']['credited']) == credited, '审批状态与实际入账进度一致：' + state)
         require(data['note'] == tag, '申请状态收尾不覆盖原审核意见')
+        for actor in (victim, center):
+            page = actor.call('/list/applications?size=50&q=' + data['code'])
+            require(page['total'] == 1 and len(page['items']) == 1, '按编号搜索后保留正确的分页与权限范围')
+            listed = page['items'][0]
+            require(listed['id'] == app and listed['progress_state'] == state
+                and float(listed['credited']) == credited and listed['approved'] == data['approved'],
+                '中心与群众的列表核定金额、入账金额和进度均与详情一致')
+            require(not any(k.startswith('progress_original') or k in ('progress_expires_at','progress_remaining') for k in listed),
+                '列表不输出内部计算字段')
+        legacy = next(x for x in victim.call('/applications') if x['id'] == app)
+        require(legacy['progress_state'] == state and float(legacy['credited']) == credited,
+            '非分页申请列表沿用同一入账计算规则')
+        other = holder.call('/list/applications?q=' + data['code'])
+        require(other['total'] == 0 and not other['items'], '新增到账字段不会跨账号泄露申请')
         return data
 
     # The review's 600+400 example must NOT invalidate the still-reserved 600.
-    root = freeze(); a, ac = refund(root, 600); b, bc = refund(root, 400)
+    root = freeze()
+    pending = victim.call('/applications', {'kind': '返还', 'originalId': root,
+        'payeeBankId': destination, 'amount': 1000, 'reason': tag, 'attachments': [victim.file()]})
+    listed = victim.call('/list/applications?q=' + pending['code'])['items'][0]
+    require(listed['approved'] is None and float(listed['credited']) == 0
+        and listed['progress_state'] == '等待核定', '待核定申请不把申请金额显示为核定或到账金额')
+    a, ac = refund(root, 600); b, bc = refund(root, 400)
     receipt(bc, 400)
     require(sql(f'SELECT remaining,reserved FROM af_command WHERE id={root}') == '600.00\t600.00',
         '先执行400元只消耗400元，其余600元仍由先核定的申请占用')
@@ -113,6 +133,8 @@ def run():
             center.call(f'/commands/{root}/simulate', {'node': '到期'})
         else:
             appeal = holder.call('/applications', {'kind': '申诉', 'originalId': root, 'reason': tag})['id']
+            listed = next(x for x in holder.call('/list/applications?size=50')['items'] if x['id'] == appeal)
+            require(listed['credited'] is None and listed['progress_state'] == '待受理', '申诉展示办理状态，不显示返还入账金额')
             center.call(f'/applications/{appeal}/review', {'decision': '受理', 'note': tag})
             center.call(f'/applications/{appeal}/review', {'decision': '成立', 'note': tag})
             release = center.call(f'/applications/{appeal}')['commands'][0]['id']

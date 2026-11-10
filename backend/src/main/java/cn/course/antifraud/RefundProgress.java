@@ -11,10 +11,30 @@ import static cn.course.antifraud.Support.*;
 final class RefundProgress {
     private RefundProgress() {}
 
+    // Read approval, freeze and all actual credits in one statement snapshot for both list APIs.
+    static final String LIST_FIELDS=",c.kind progress_original_kind,c.state progress_original_state,c.expires_at progress_expires_at,c.remaining progress_remaining,(SELECT COALESCE(SUM(x.actual),0) FROM af_command x WHERE x.application_id=a.id AND x.kind='返还') credited";
+
+    static void decorateListRow(Map<String,Object> row,LocalDateTime now){
+        var original=map("kind",row.remove("progress_original_kind"),"state",row.remove("progress_original_state"),
+            "expires_at",row.remove("progress_expires_at"),"remaining",row.remove("progress_remaining"));
+        if(str(row,"kind").equals("返还")){
+            var progress=describe(row,original,amount(row,"credited"),str(row,"execution_state"),now);
+            row.put("progress_state",progress.get("state"));
+        }else{
+            row.put("credited",null);
+            row.put("progress_state",str(row,"execution_state").isBlank()?row.get("state"):row.get("execution_state"));
+        }
+    }
+
     static Map<String,Object> describe(Map<String,Object> application,Map<String,Object> original,
                                       List<Map<String,Object>> commands,LocalDateTime now){
         var refunds=commands.stream().filter(c->str(c,"kind").equals("返还")).toList();
         BigDecimal credited=refunds.stream().map(c->amount(c,"actual")).reduce(BigDecimal.ZERO,BigDecimal::add);
+        return describe(application,original,credited,refunds.isEmpty()?"":str(refunds.getLast(),"state"),now);
+    }
+
+    private static Map<String,Object> describe(Map<String,Object> application,Map<String,Object> original,
+                                              BigDecimal credited,String latestState,LocalDateTime now){
         BigDecimal approved=amount(application,"approved");
         String state,note;
         if(credited.signum()>0){
@@ -26,7 +46,7 @@ final class RefundProgress {
         }else if(str(application,"state").equals("核定通过")){
             if(!Commands.liveFreeze(original,now)){
                 state="办理已结束";note="原止付已结束、到期或冻结资金已耗尽，本申请尚未入账，不能继续执行或重发。";
-            }else if(!refunds.isEmpty()&&Set.of("未处理","拒绝执行","已拒绝").contains(str(refunds.getLast(),"state"))){
+            }else if(Set.of("未处理","拒绝执行","已拒绝").contains(latestState)){
                 state="执行失败";note="本申请尚未入账。中心核实当前可用冻结金额后，可从最新返还指令复核重发。";
             }else{
                 state="等待执行";note="申请已核定，款项尚未入账，等待支付机构执行并提交回执。";
