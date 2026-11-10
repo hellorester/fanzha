@@ -32,6 +32,7 @@ public class BusinessApi {
  @PostMapping("/commands/{id}/correction") public Object correction(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){commands.requestCorrection(auth.user(r),id,b);return map("ok",true);}
  @PostMapping("/corrections/{id}/review") public Object correctionReview(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){commands.correct(auth.user(r),id,b);return map("ok",true);}
  @GetMapping("/visits") public Object visits(HttpServletRequest r){return community.visits(auth.user(r));}
+ @GetMapping("/visit-attention") public Object visitAttention(HttpServletRequest r){return community.attention(auth.user(r));}
  @GetMapping("/visits/{id}") public Object visit(HttpServletRequest r,@PathVariable long id){return community.visit(auth.user(r),id);}
  @PostMapping("/visits/{id}/claim") public Object claim(HttpServletRequest r,@PathVariable long id){community.claim(auth.user(r),id);return map("ok",true);}
  @PostMapping("/visits/{id}/assign") public Object assign(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){community.assign(auth.user(r),id,b);return map("ok",true);}
@@ -42,6 +43,7 @@ public class BusinessApi {
  @GetMapping("/campaigns/{id}") public Object campaign(HttpServletRequest r,@PathVariable long id){return community.campaign(auth.user(r),id);}
  @PostMapping("/campaigns") public Object campaign(HttpServletRequest r,@RequestBody Map<String,Object> b){return map("id",community.createCampaign(auth.user(r),b));}
  @PostMapping("/campaigns/{id}/checkin") public Object checkin(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){community.checkIn(auth.user(r),id,b);return map("ok",true);}
+ @PostMapping("/campaigns/{id}/finish") public Object campaignFinish(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){community.finishCampaign(auth.user(r),id,b);return map("ok",true);}
  @GetMapping("/articles") public Object articles(HttpServletRequest r){return community.articles(auth.optional(r));}
  @GetMapping("/articles/{id}") public Object article(HttpServletRequest r,@PathVariable long id){return community.article(auth.optional(r),id);}
  @PostMapping("/articles") public Object articleCreate(HttpServletRequest r,@RequestBody Map<String,Object> b){return map("id",community.saveArticle(auth.user(r),0,b));}

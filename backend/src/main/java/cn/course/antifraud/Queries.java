@@ -47,7 +47,7 @@ public class Queries {
   if(!source.isBlank()&&resource.equals("reports")){where+=" AND r.source=?";params.add(source);}
   if(!level.isBlank()&&Set.of("reports","alerts","visits").contains(resource)){where+=" AND a.level=?";params.add(level);}
   long total=s.count("SELECT COUNT(*) FROM "+from+" WHERE "+where,params.toArray());params.add(size);params.add((page-1)*size);var items=s.rows("SELECT "+select+" FROM "+from+" WHERE "+where+" ORDER BY "+order+" LIMIT ? OFFSET ?",params.toArray());
-  for(var item:items){if(item.containsKey("number_enc"))item.put("account",mask(s.decrypt(item.remove("number_enc"))));if(item.containsKey("holder_enc"))item.put("holder",s.decrypt(item.remove("holder_enc")));if(item.containsKey("value_enc"))item.put("value",s.decrypt(item.remove("value_enc")));}
+  for(var item:items){if(resource.equals("commands"))item.put("application_eligible",Commands.liveFreeze(item,s.now()));if(item.containsKey("number_enc"))item.put("account",mask(s.decrypt(item.remove("number_enc"))));if(item.containsKey("holder_enc"))item.put("holder",s.decrypt(item.remove("holder_enc")));if(item.containsKey("value_enc"))item.put("value",s.decrypt(item.remove("value_enc")));}
   return map("items",items,"total",total,"page",page,"size",size,"states",states);
  }
 }

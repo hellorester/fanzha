@@ -4,7 +4,7 @@ import {api} from '../api'
 import {createAttachmentDraft} from '../attachment-draft'
 import AppIcon from './AppIcon.vue'
 const props=defineProps({title:String,description:String,fields:Array,initial:Object,summary:Function,submit:Function,button:{default:'确认提交'}})
-const emit=defineEmits(['close','done'])
+const emit=defineEmits(['close','done','conflict'])
 const data=reactive({...props.initial}),error=ref(''),busy=ref(false),uploads=reactive({}),dialog=ref(null),formId=useId()
 const draft=createAttachmentDraft(api)
 props.fields.forEach(f=>{if(data[f.key]===undefined)data[f.key]=f.default??(f.type==='checkbox'?false:f.type==='file'?[]:'')})
@@ -59,7 +59,7 @@ async function send(){
   const missing=props.fields.find(f=>f.type==='file'&&f.required&&!data[f.key]?.length)
   if(missing)throw Error('请上传'+missing.label)
   const result=await props.submit({...data});draft.commit();emit('done',result)
- }catch(e){error.value=e.message}finally{busy.value=false}
+ }catch(e){error.value=e.message;if(e.status===409)emit('conflict')}finally{busy.value=false}
 }
 </script>
 <template>

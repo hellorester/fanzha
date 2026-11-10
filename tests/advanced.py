@@ -56,10 +56,8 @@ def advanced():
  pay.call(f'/commands/{nextchild}/accept',{});pay.call(f'/commands/{nextchild}/receipt',{'result':'全额执行','amount':800,'voucher':'REFUND-RETRY'})
  require(float(pay.call(f'/commands/{cid}')['remaining'])==200,'返还重发保持账目一致')
  # Correction appends a new receipt; dependent transactions block correction.
- pay.call(f'/commands/{cid}/correction',{'result':'部分执行','amount':900,'reason':'测试有返还依赖的更正保护'})
- correction=next(x for x in center.call('/corrections') if x['command_id']==cid)
- center.call(f"/corrections/{correction['id']}/review",{'approve':True,'note':'有依赖，禁止直接改写。'},expected=409)
- center.call(f"/corrections/{correction['id']}/review",{'approve':False,'note':'保留原账目，需先解决关联业务。'})
+ pay.call(f'/commands/{cid}/correction',{'result':'部分执行','amount':900,'reason':'测试有返还依赖的更正保护'},expected=409)
+ require(not any(x['command_id']==cid for x in center.call('/corrections')),'存在资金依赖时即阻止无效更正入队')
  _,d2=freeze();c2=d2['commandId']
  pay.call(f'/commands/{c2}/correction',{'result':'部分执行','amount':800,'reason':'模拟录入金额偏差，申请追加更正版本'})
  x=next(x for x in center.call('/corrections') if x['command_id']==c2)

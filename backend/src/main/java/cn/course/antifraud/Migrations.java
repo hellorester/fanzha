@@ -80,6 +80,18 @@ public class Migrations implements CommandLineRunner {
                     column("af_correction","base_receipt_id","BIGINT");
                     mark(7);
                 }
+                if(!applied(8))tx.executeWithoutResult(status->{
+                    // Preserve historical decisions; only unfinished work on an ended freeze expires.
+                    for(var a:s.rows("SELECT a.id,a.state FROM af_application a JOIN af_command c ON c.id=a.original_id WHERE a.state IN ('待核定','待受理','审核中','驳回待补') AND c.state IN ('已解除','拒绝执行','已作废') ORDER BY a.id")){
+                        s.db.update("UPDATE af_application SET state='已失效',updated_at=? WHERE id=?",s.now(),a.get("id"));
+                        s.log(null,"申请失效","application",num(a,"id"),str(a,"state"),"已失效","升级核对：原止付已结束，保留原申请及审核记录");
+                    }
+                    for(var x:s.rows("SELECT x.id FROM af_correction x JOIN af_command c ON c.id=x.command_id WHERE x.state='待审核' AND c.state IN ('已解除','已作废') ORDER BY x.id")){
+                        s.db.update("UPDATE af_correction SET state='已失效',review_note='原止付已结束，无法继续更正' WHERE id=?",x.get("id"));
+                        s.log(null,"更正失效","correction",num(x,"id"),"待审核","已失效","升级核对：原止付已结束");
+                    }
+                    mark(8);
+                });
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }
