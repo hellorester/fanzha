@@ -1,6 +1,6 @@
 <script setup>
 import {computed,ref,watch,onBeforeUnmount} from 'vue'
-import {fmt,statusTone} from '../api'
+import {fmt,money,statusTone} from '../api'
 import AppIcon from './AppIcon.vue'
 const props=defineProps({rows:{type:Array,default:()=>[]},columns:Array,empty:{default:'暂无记录'},selectable:{default:true},server:{default:null},resource:{default:''}})
 const emit=defineEmits(['select','query'])
@@ -37,10 +37,25 @@ onBeforeUnmount(()=>clearTimeout(queryTimer))
    <label v-if="resource==='reports'"><span>线索来源</span><select v-model="source" aria-label="按来源筛选"><option value="">全部来源</option><option>群众举报</option><option value="模拟监测">监测线索</option></select></label>
   </div>
  </div>
- <div class="table-scroll">
+ <div class="table-scroll" :class="{'application-list':resource==='applications'}">
   <table><thead><tr><th v-for="c in columns" :key="c.key" scope="col">{{c.label}}</th><th v-if="selectable" class="align-right" scope="col">操作</th></tr></thead>
    <tbody><tr v-for="r in visible" :key="r.id||r.code"><td v-for="c in columns" :key="c.key" :data-label="c.label" :class="{'mono':c.key==='code','wide-cell':c.wide}"><span v-if="c.badge" class="badge" :class="statusTone(String(r[c.key]||''))">{{fmt(r[c.key])}}{{c.key==='level'?'风险':''}}</span><span v-else>{{c.format?c.format(r[c.key],r):fmt(r[c.key])}}</span></td><td v-if="selectable" class="align-right" data-label="操作"><button class="text-button row-action" @click="emit('select',r)">查看详情<AppIcon name="chevron" :size="14"/></button></td></tr></tbody>
   </table>
+  <div v-if="resource==='applications'&&visible.length" class="application-cards">
+   <article v-for="r in visible" :key="r.id||r.code" class="application-card" :aria-label="r.kind+'申请 '+r.code">
+    <header>
+     <div><h3>{{r.kind}}申请</h3><span class="mono">{{r.code}}</span></div>
+     <span class="badge" :class="statusTone(r.progress_state||r.state)">{{fmt(r.progress_state||r.state)}}</span>
+    </header>
+    <p class="application-original">原止付 <span class="mono">{{fmt(r.original_code)}}</span></p>
+    <dl v-if="r.kind==='返还'" class="application-amounts">
+     <div><dt>申请金额</dt><dd>{{r.amount==null?'—':money(r.amount)}}</dd></div>
+     <div><dt>核定金额</dt><dd>{{r.approved==null?'—':money(r.approved)}}</dd></div>
+     <div class="application-credited"><dt>实际入账</dt><dd>{{r.credited==null?'—':money(r.credited)}}</dd></div>
+    </dl>
+    <footer><span>申请状态 <strong>{{fmt(r.state)}}</strong></span><button v-if="selectable" class="text-button row-action" @click="emit('select',r)">查看办理详情<AppIcon name="chevron" :size="14"/></button></footer>
+   </article>
+  </div>
   <div v-if="!visible.length" class="empty"><div class="empty-symbol"><AppIcon name="inbox" :size="30"/></div><strong>{{search||status||activeCount?'没有匹配的记录':empty}}</strong><p>{{search||status||activeCount?'尝试调整搜索关键词或筛选条件。':'完成业务办理后，记录将显示在这里。'}}</p><button v-if="search||status||activeCount" class="small" @click="reset">清除筛选</button></div>
  </div>
  <div class="pagination"><span>{{total?'显示 '+((page-1)*10+1)+'–'+Math.min(page*10,total)+' 条':'共 0 条'}}<span class="pagination-size">每页 10 条</span></span><div><button class="icon-button page-button previous-page" aria-label="上一页" :disabled="page<=1" @click="page--"><AppIcon name="chevron" :size="16"/></button><span class="page-number">{{page}}<span>/ {{pages}}</span></span><button class="icon-button page-button" aria-label="下一页" :disabled="page>=pages" @click="page++"><AppIcon name="chevron" :size="16"/></button></div></div>
