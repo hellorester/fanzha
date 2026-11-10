@@ -2,6 +2,7 @@
 from integration import *
 from test_db import sql, VERIFY
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlencode
 
 
 def run():
@@ -45,6 +46,37 @@ def run():
     bank=center.call('/banks',{'personId':person,'number':'6222000000000191','orgId':1,'opening':0,'note':'核对本人账户开户凭证'})['id']
     require([b['id'] for b in unbanked.call('/banks')]==[bank],'经中心核验后只出现本人的账户')
     center.call(f'/banks/{bank}/owner',{'personId':1,'note':'尝试转移账户身份'},expected=409)
+
+    # Encrypted account searches must filter within the role scope before counting and paging.
+    second_bank=center.call('/banks',{'personId':person,'number':'6222000000000192','orgId':2,'opening':0,'note':'另一机构的本人账户'})['id']
+    pay2=Client('pay2')
+    def bank_search(actor,q,**paging):return actor.call('/list/banks?'+urlencode({'q':q,**paging}))
+    for actor in (center,unbanked):
+        first=bank_search(actor,tag.lower(),size=1,page=1);second=bank_search(actor,tag.lower(),size=1,page=2)
+        require(first['total']==second['total']==2 and [x['id'] for x in first['items']]==[bank]
+            and [x['id'] for x in second['items']]==[second_bank],'按加密户名匹配后统计与分页保持完整')
+        require(not bank_search(actor,tag,page=3,size=1)['items'],'户名搜索超出末页时不重复记录')
+        for query in ('6222000000000191','6222 0000-0000 0191'):
+            found=bank_search(actor,query)
+            require(found['total']==1 and found['items'][0]['id']==bank,'完整账号使用规范化指纹精确匹配')
+            require(not any(k.endswith('_enc') or k.endswith('_hash') for k in found['items'][0]),'搜索不返回加密值或指纹')
+        require(bank_search(actor,'62220000')['total']==0,'账号前缀不会按密文或尾号模糊匹配')
+        require(bank_search(actor,"' OR 1=1 --")['total']==0,'特殊字符只作为绑定的搜索内容')
+    for actor,expected in ((pay,bank),(pay2,second_bank)):
+        found=bank_search(actor,tag)
+        require(found['total']==1 and found['items'][0]['id']==expected,'户名搜索仍按支付机构隔离')
+    require(bank_search(pay2,'6222000000000191')['total']==0,'精确账号不能跨机构搜索')
+    org_name=next(b for b in unbanked.call('/banks') if b['id']==bank)['org_name']
+    require([b['id'] for b in bank_search(unbanked,org_name[:2])['items']]==[bank],'机构名支持模糊匹配并保留群众归属范围')
+    for actor in (reporter,victim,holder):
+        for query in (tag,'6222000000000191'):
+            found=bank_search(actor,query)
+            require(found['total']==0 and not found['items'],'其他群众不能借户名或完整账号搜索到他人账户')
+    pending_user=username+'_pending'
+    center.call('/users',{'username':pending_user,'password':'Demo2026!','displayName':'尚未核验','role':'PUBLIC','verified':False,'enabled':True})
+    require(bank_search(Client(pending_user),tag)['total']==0,'未实名账号不能搜索资金账户')
+    Client().call('/list/banks?q=6222000000000191',expected=401)
+    grid.call('/list/banks?q=6222000000000191',expected=403)
 
     # Reporter A, victim B, frozen-account holder C are three independent people.
     r=report(reporter,'网址','https://identity-risk.example/redirect?case='+tag,'代他人举报')

@@ -124,11 +124,13 @@ def run():
     root = freeze(); a, ac = refund(root, 600)
     receipt(ac, 400, '部分执行'); progress(a, '部分入账', 400)
     b, bc = refund(root, 600); receipt(bc, 600)
-    progress(a, '部分入账', 400); progress(b, '已成功入账', 600)
+    progress(a, '部分入账（已结束）', 400); progress(b, '已成功入账', 600)
 
     # Expiration and a successful appeal both cancel approved but unpaid refunds.
     for ending in ('到期', '申诉'):
-        root = freeze(); a, ac = refund(root, 1000)
+        root = freeze(); partial, pc = refund(root, 600)
+        receipt(pc, 400, '部分执行'); progress(partial, '部分入账', 400)
+        a, ac = refund(root, 600)
         if ending == '到期':
             center.call(f'/commands/{root}/simulate', {'node': '到期'})
         else:
@@ -140,6 +142,8 @@ def run():
             release = center.call(f'/applications/{appeal}')['commands'][0]['id']
             pay.call(f'/commands/{release}/accept', {}); receipt(release, 0, '解除成功')
         progress(a, '申请已失效', 0, '已失效')
+        ended_partial=progress(partial, '部分入账（已结束）', 400)
+        require('不能基于该止付继续办理' in ended_partial['fundsProgress']['note'], '部分入账在到期或解除后明确提示不能继续办理')
         require(pay.call(f'/commands/{ac}')['state'] == '已取消', '原冻结结束时同步取消未执行返还')
         pay.call(f'/commands/{ac}/receipt', {'result': '全额执行', 'amount': 1000, 'voucher': tag}, expected=409)
         ended.append(a)

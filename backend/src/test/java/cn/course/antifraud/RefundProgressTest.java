@@ -35,7 +35,21 @@ class RefundProgressTest {
     @Test void partialCreditSurvivesFreezeClosure(){
         var origin=original();origin.put("state","已解除");origin.put("remaining",0);
         var p=RefundProgress.describe(app(),origin,List.of(child("已执行",400)),now);
-        assertEquals("部分入账",p.get("state"));assertEquals(money(400),p.get("credited"));
+        assertEquals("部分入账（已结束）",p.get("state"));assertEquals(money(400),p.get("credited"));
+        assertTrue(str(p,"note").contains("不能基于该止付继续办理"));
+    }
+    @Test void partialCreditWhileFreezeIsLiveDoesNotPromiseAutomaticPayment(){
+        var p=RefundProgress.describe(app(),original(),List.of(child("已执行",400)),now);
+        assertEquals("部分入账",p.get("state"));assertTrue(str(p,"note").contains("不会自动再次划款"));
+    }
+    @Test void partialCreditAtUnscannedDeadlineIsAlreadyFinished(){
+        var origin=original();origin.put("expires_at",now);
+        var p=RefundProgress.describe(app(),origin,List.of(child("已执行",400)),now);
+        assertEquals("部分入账（已结束）",p.get("state"));assertEquals(money(400),p.get("credited"));
+    }
+    @Test void fullCreditRemainsSuccessfulAfterClosure(){
+        var origin=original();origin.put("state","已解除");origin.put("remaining",0);
+        assertEquals("已成功入账",RefundProgress.describe(app(),origin,List.of(child("已执行",600)),now).get("state"));
     }
     @Test void invalidApplicationCannotAdvertiseRetry(){
         var a=app();a.put("state","已失效");

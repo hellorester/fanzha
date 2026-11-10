@@ -23,7 +23,7 @@ public class Queries {
    case "corrections"->{u.roles("CENTER","PAYMENT");select="x.*,c.code,c.org_id";from="af_correction x JOIN af_command c ON c.id=x.command_id";order="x.id DESC";stateField="x.state";search="c.code LIKE ? OR x.reason LIKE ? OR x.new_result LIKE ?";if(u.role().equals("PAYMENT")){where="c.org_id=?";params.add(u.orgId());}}
    case "blacklist"->{u.roles("CENTER");select="b.id,b.kind,b.value_enc,b.source,b.enabled";from="af_blacklist b";order="b.id DESC";search="b.kind LIKE ? OR b.source LIKE ?";}
    case "users"->{u.administrator();select="u.id,u.username,u.display_name,u.role,u.org_id,u.community_id,u.victim_id,u.verified,u.enabled,u.admin";from="af_user u";order="u.id";search="u.username LIKE ? OR u.display_name LIKE ? OR u.role LIKE ?";}
-   case "banks"->{u.roles("CENTER","PAYMENT","PUBLIC");select="b.id,b.org_id,b.owner_person_id,b.number_enc,b.holder_enc,b.available,o.name org_name";from="af_bank b JOIN af_org o ON o.id=b.org_id";order="b.id";search="o.name LIKE ? OR o.name LIKE ? OR o.name LIKE ?";if(u.role().equals("PAYMENT")){where="b.org_id=?";params.add(u.orgId());}if(u.role().equals("PUBLIC")){where="b.owner_person_id=?";params.add(u.verified()?u.victimId():-1);}}
+   case "banks"->{u.roles("CENTER","PAYMENT","PUBLIC");select="b.id,b.org_id,b.owner_person_id,b.number_enc,b.holder_enc,b.available,o.name org_name";from="af_bank b JOIN af_org o ON o.id=b.org_id";order="b.id";search="o.name LIKE ?";if(u.role().equals("PAYMENT")){where="b.org_id=?";params.add(u.orgId());}if(u.role().equals("PUBLIC")){where="b.owner_person_id=?";params.add(u.verified()?u.victimId():-1);}}
    case "logs"->{u.roles("CENTER");select="l.*,COALESCE(u.display_name,'系统') actor";from="af_log l LEFT JOIN af_user u ON u.id=l.actor_id";order="l.id DESC";search="l.action LIKE ? OR l.note LIKE ? OR u.display_name LIKE ?";}
    default->throw new Problem(404,"列表不存在");
   }
@@ -35,6 +35,15 @@ public class Queries {
     for(String candidate:List.of("号码","账户","网址"))try{
      String normalized=Rules.normalize(candidate,query);search+=" OR (b.kind=? AND b.value_hash=?)";params.add(candidate);params.add(s.fingerprint(candidate,normalized));
     }catch(Problem ignored){/* This query is not a valid value of this particular kind. */}
+   }else if(resource.equals("banks")){
+    // Holder names are encrypted. Match only authorized rows, before SQL counting and paging.
+    String nameQuery=searchName(query.trim());
+    var holderIds=s.rows("SELECT b.id,b.holder_enc FROM "+from+" WHERE "+where,params.toArray()).stream()
+        .filter(b->searchName(s.decrypt(b.get("holder_enc"))).contains(nameQuery)).map(b->b.get("id")).toList();
+    params.add(term);
+    try{String normalized=Rules.normalize("账户",query);search+=" OR b.number_hash=?";params.add(s.fingerprint("账户",normalized));}
+    catch(Problem ignored){/* A name or organization query need not be a valid account number. */}
+    if(!holderIds.isEmpty()){search+=" OR b.id IN ("+String.join(",",Collections.nCopies(holderIds.size(),"?"))+")";params.addAll(holderIds);}
    }else params.addAll(List.of(term,term,term));
    where+=" AND ("+search+")";
   }
@@ -50,4 +59,5 @@ public class Queries {
   for(var item:items){if(resource.equals("applications"))RefundProgress.decorateListRow(item,s.now());if(resource.equals("commands")){boolean live=Commands.liveFreeze(item,s.now());item.put("application_eligible",live);item.put("refund_eligible",live&&u.verified()&&num(item,"victim_id")==u.victimId());item.put("appeal_eligible",live&&u.verified()&&num(item,"account_owner_id")==u.victimId()&&!Commands.hasAppeal(s,num(item,"id")));if(u.role().equals("PUBLIC")){item.put("relationship",num(item,"victim_id")==u.victimId()?"受害人相关":"本人资金账户");item.remove("victim_id");item.remove("account_owner_id");}}if(item.containsKey("number_enc"))item.put("account",mask(s.decrypt(item.remove("number_enc"))));if(item.containsKey("holder_enc"))item.put("holder",s.decrypt(item.remove("holder_enc")));if(item.containsKey("value_enc"))item.put("value",s.decrypt(item.remove("value_enc")));}
   return map("items",items,"total",total,"page",page,"size",size,"states",states);
  }
+ private static String searchName(String value){return java.text.Normalizer.normalize(value,java.text.Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);}
 }

@@ -23,7 +23,7 @@ onBeforeUnmount(()=>clearTimeout(queryTimer))
 <template>
  <div class="table-toolbar">
   <div class="table-tools">
-   <label class="search"><AppIcon name="search" :size="17"/><input v-model="search" :placeholder="resource==='blacklist'?'类型、来源或完整线索值':'搜索编号、名称或关键词'" :maxlength="resource==='blacklist'?500:80" aria-label="搜索记录"><button v-if="search" type="button" class="icon-button" aria-label="清空搜索" @click="search=''"><AppIcon name="close" :size="14"/></button></label>
+   <label class="search"><AppIcon name="search" :size="17"/><input v-model="search" :placeholder="resource==='blacklist'?'类型、来源或完整线索值':resource==='banks'?'机构、户名或完整账号':'搜索编号、名称或关键词'" :maxlength="resource==='blacklist'?500:80" aria-label="搜索记录"><button v-if="search" type="button" class="icon-button" aria-label="清空搜索" @click="search=''"><AppIcon name="close" :size="14"/></button></label>
    <select v-if="statuses.length" v-model="status" aria-label="按状态筛选"><option value="">全部状态</option><option v-for="s in statuses" :key="s">{{s}}</option></select>
    <button v-if="advanced" class="filter-toggle" :class="{selected:expanded||activeCount}" :aria-expanded="expanded" @click="expanded=!expanded"><AppIcon name="filter" :size="16"/>筛选<span v-if="activeCount" class="filter-count">{{activeCount}}</span></button>
    <button v-if="search||status||activeCount" class="text-button reset-filter" @click="reset">重置</button>

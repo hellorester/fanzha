@@ -1,5 +1,5 @@
 <script setup>
-import {ref,computed,onMounted,watch,nextTick} from 'vue'
+import {ref,computed,onMounted,onBeforeUnmount,watch,nextTick} from 'vue'
 import {api,boot,session,fmt,money,localTime,roleNames,statusTone,businessName} from './api'
 import DataTable from './components/DataTable.vue'
 import IntegrityPanel from './components/IntegrityPanel.vue'
@@ -45,10 +45,14 @@ const columns=computed(()=>({
 const detailLoader=createDetailLoader({request:api,start:(type,row)=>{error.value='';detail.value={type,id:row.id,data:row,loading:true}},commit:value=>{detail.value=value},fail:e=>{if(detail.value)detail.value={...detail.value,loading:false};error.value=e.message}})
 function closeDetail(){detailLoader.invalidate();detail.value=null;error.value=''}
 const retryingReport=ref(false)
-const accountMenu=ref(null)
-watch(()=>user.value?.id,()=>closeDetail(),{flush:'sync'})
-function go(id){if(accountMenu.value)accountMenu.value.open=false;location.hash=id;page.value=id;closeDetail();error.value='';mobile.value=false;nextTick(()=>window.scrollTo({top:0,behavior:'instant'}))}
-window.addEventListener('hashchange',()=>{page.value=location.hash.slice(1)||'dashboard';closeDetail();mobile.value=false})
+const accountMenu=ref(null),accountOpen=ref(false)
+function closeAccountMenu(restoreFocus=false){accountOpen.value=false;if(accountMenu.value){accountMenu.value.open=false;if(restoreFocus)accountMenu.value.querySelector('summary')?.focus()}}
+function outsideAccountMenu(event){if(accountMenu.value&&!accountMenu.value.contains(event.target))closeAccountMenu()}
+onMounted(()=>document.addEventListener('pointerdown',outsideAccountMenu,true))
+onBeforeUnmount(()=>document.removeEventListener('pointerdown',outsideAccountMenu,true))
+watch(()=>user.value?.id,()=>{closeAccountMenu();closeDetail()},{flush:'sync'})
+function go(id){closeAccountMenu();location.hash=id;page.value=id;closeDetail();error.value='';mobile.value=false;nextTick(()=>window.scrollTo({top:0,behavior:'instant'}))}
+window.addEventListener('hashchange',()=>{closeAccountMenu();page.value=location.hash.slice(1)||'dashboard';closeDetail();mobile.value=false})
 function notify(text){toast.value=text;setTimeout(()=>toast.value='',5000)}
 let refreshSequence=0
 function clearView(){refreshSequence++;rows.value=[];visitAttention.value=[];stats.value={metrics:[],daily:[],risks:[]};meta.value={};pagination.value=null;closeDetail();modal.value=null;receiptResult.value=null;error.value=''}
@@ -176,7 +180,7 @@ const detailPairs=computed(()=>{const fields={code:'业务编号',kind:'业务�
    <div class="sidebar-footer"><div class="avatar">{{businessName(user?.displayName).slice(0,1)}}</div><div class="user-caption"><strong>{{businessName(user?.displayName)}}</strong><small>{{user?.username||'公共服务入口'}}</small></div><button v-if="user" class="icon-button logout" aria-label="退出登录" @click="logout"><AppIcon name="logout" :size="18"/></button><button v-else class="text-button" @click="go('welcome')">登录</button></div>
   </aside>
   <div v-if="mobile" class="nav-shade" @click="mobile=false"></div>
-  <div class="main-area"><header class="topbar"><div class="breadcrumb-row"><button class="icon-button mobile-menu" aria-label="打开菜单" @click="mobile=!mobile;accountMenu.open=false"><AppIcon name="menu" :size="20"/></button><span class="muted">{{roleNames[role]||'公共服务'}}</span><AppIcon name="chevron" :size="13"/><strong>{{title}}</strong></div><div class="topbar-meta"><span class="topbar-date">{{new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'})}}</span><details ref="accountMenu" class="mobile-account" @keydown.esc="accountMenu.open=false" @focusout="!$event.currentTarget.contains($event.relatedTarget)&&(accountMenu.open=false)"><summary aria-label="查看当前账号"><AppIcon name="user" :size="18"/><span>账号</span></summary><div class="account-popover"><strong>{{businessName(user.displayName)}}</strong><span>{{user.username}} · {{roleNames[role]}}</span><button @click="logout"><AppIcon name="logout" :size="16"/>退出登录</button></div></details></div></header>
+  <div class="main-area"><header class="topbar"><div class="breadcrumb-row"><button class="icon-button mobile-menu" aria-label="打开菜单" @click="mobile=!mobile;closeAccountMenu()"><AppIcon name="menu" :size="20"/></button><span class="muted">{{roleNames[role]||'公共服务'}}</span><AppIcon name="chevron" :size="13"/><strong>{{title}}</strong></div><div class="topbar-meta"><span class="topbar-date">{{new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'})}}</span><details ref="accountMenu" class="mobile-account" @toggle="accountOpen=$event.currentTarget.open" @keydown.esc.prevent="closeAccountMenu(true)" @focusout="!$event.currentTarget.contains($event.relatedTarget)&&closeAccountMenu()"><summary aria-label="查看当前账号" :aria-expanded="accountOpen" aria-controls="mobile-account-panel"><AppIcon name="user" :size="18"/><span>账号</span></summary><div id="mobile-account-panel" class="account-popover"><strong>{{businessName(user.displayName)}}</strong><span>{{user.username}} · {{roleNames[role]}}</span><button @click="logout"><AppIcon name="logout" :size="16"/>退出登录</button></div></details></div></header>
   <main class="content"><div class="page-heading"><div><h1>{{title}}</h1></div><div class="heading-actions"><button v-if="page==='dashboard'" class="primary" @click="role==='PUBLIC'?reportForm():go(primaryRoute)">{{role==='PUBLIC'?'提交举报':'查看待办'}}<AppIcon name="arrow" :size="16"/></button><button v-if="user" :disabled="busy" @click="refresh"><AppIcon name="refresh" :size="16"/>刷新</button><button v-if="canCreate" class="primary" @click="create"><AppIcon name="plus" :size="16"/>{{page==='configs'?'发布新版本':page==='reports'?'提交线索':'新建'}}</button><button v-if="!user" class="primary" @click="reportForm"><AppIcon name="plus" :size="16"/>提交匿名举报</button></div></div>
    <div v-if="error" class="error-box page-error" role="alert">{{error}}<button class="text-button" @click="refresh">重试</button></div><div v-if="busy" class="loading-bar" aria-label="正在加载"></div>
    <template v-if="page==='dashboard'">

@@ -39,8 +39,13 @@ final class RefundProgress {
         String state,note;
         if(credited.signum()>0){
             boolean full=approved.signum()>0&&credited.compareTo(approved)>=0;
-            state=full?"已成功入账":"部分入账";
-            note=full?"本申请核定款项已转入本人收款账户。":"以实际入账金额为准；本次执行已结束，未执行部分不会自动再次划款。";
+            if(full){
+                state="已成功入账";note="本申请核定款项已转入本人收款账户。";
+            }else if(!Commands.liveFreeze(original,now)){
+                state="部分入账（已结束）";note="原止付已结束、到期或冻结资金已耗尽，已入账金额保留；未入账部分不能基于该止付继续办理。";
+            }else{
+                state="部分入账";note="本次执行已结束，未执行部分不会自动再次划款。原止付仍有效，如仍有未返还的受损资金，可另行申请并由中心核定。";
+            }
         }else if(str(application,"state").equals("已失效")){
             state="申请已失效";note="本申请未入账且已结束，不能继续执行或重发；核定意见及历次执行记录保留，结束原因见办理记录。";
         }else if(str(application,"state").equals("核定通过")){

@@ -13,4 +13,4 @@ export const money=(v)=>new Intl.NumberFormat('zh-CN',{style:'currency',currency
 export const businessName=v=>String(v??'').replace(/^演示居民(?=[一二三\d])/,'居民').replace(/^模拟账户(?=\d)/,'账户').replace(/（模拟）$/,'').replace(/^模拟监测$/,'监测线索')
 export const localTime=()=>{let d=new Date();return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,19)}
 export const roleNames={CENTER:'反诈中心',PUBLIC:'群众服务',PAYMENT:'支付机构',GRID:'网格劝阻'}
-export const statusTone=(s)=>/失效|已取消|办理已结束/.test(s)?'gray':/拒绝|驳回|未完成|未处理|失败|高|超时/.test(s)?'red':/已闭环|已解除|已执行|已完成|已归档|已回传|核定通过|已发布|已成功入账|低/.test(s)?'green':/受理|待|中|已送达|已核实|已归并|部分入账/.test(s)?'amber':'blue'
+export const statusTone=(s)=>/失效|已取消|已结束/.test(s)?'gray':/拒绝|驳回|未完成|未处理|失败|高|超时/.test(s)?'red':/已闭环|已解除|已执行|已完成|已归档|已回传|核定通过|已发布|已成功入账|低/.test(s)?'green':/受理|待|中|已送达|已核实|已归并|部分入账/.test(s)?'amber':'blue'
