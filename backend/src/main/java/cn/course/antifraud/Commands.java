@@ -72,10 +72,12 @@ public class Commands {
         }
         if(expirePending(c,original,now,u,""))throw new CommandTimeout();
     }
-    private static void endApplications(Support s,long originalId,User actor,String reason){
-        for(var a:s.rows("SELECT id,state FROM af_application WHERE original_id=? AND state IN ('待核定','待受理','审核中','驳回待补') ORDER BY id FOR UPDATE",originalId)){
+    static void endApplications(Support s,long originalId,User actor,String reason){
+        // Approval reserves funds but is not a payment. Preserve every credited application,
+        // including partial payments, and expire unpaid approvals when the freeze ends.
+        for(var a:s.rows("SELECT a.id,a.state FROM af_application a WHERE a.original_id=? AND (a.state IN ('待核定','待受理','审核中','驳回待补') OR (a.kind='返还' AND a.state='核定通过' AND NOT EXISTS (SELECT 1 FROM af_command c WHERE c.application_id=a.id AND c.kind='返还' AND c.actual>0))) ORDER BY a.id FOR UPDATE",originalId)){
             s.db.update("UPDATE af_application SET state='已失效',updated_at=? WHERE id=?",s.now(),a.get("id"));
-            s.log(actor,"申请失效","application",num(a,"id"),str(a,"state"),"已失效",reason);
+            s.log(actor,"申请失效","application",num(a,"id"),str(a,"state"),"已失效",reason+(str(a,"state").equals("核定通过")?"；本申请尚未入账，原核定金额和审核意见保留":""));
         }
     }
     private void correctionEligible(Map<String,Object> c){
@@ -132,7 +134,16 @@ public class Commands {
         Object encrypted=a.remove("payee_enc");a.put("payee",str(a,"kind").equals("返还")&&encrypted!=null?mask(s.decrypt(encrypted)):null);
         if(num(a,"applicant_person_id")>0)a.put("applicant_name",s.decrypt(s.one("SELECT name_enc FROM af_victim WHERE id=?",a.get("applicant_person_id")).get("name_enc")));
     }
-    public Map<String,Object> application(User u,long id){u.roles("CENTER","PUBLIC");var a=s.one("SELECT * FROM af_application WHERE id=?"+(u.role().equals("PUBLIC")?" AND owner_id=?":""),u.role().equals("PUBLIC")?new Object[]{id,u.id()}:new Object[]{id});var funds=s.one("SELECT remaining,reserved FROM af_command WHERE id=?",a.get("original_id"));funds.put("available",amount(funds,"remaining").subtract(amount(funds,"reserved")));a.put("originalFunds",funds);applicationIdentity(a);a.put("attachments",files.list("application",id));a.put("commands",s.rows("SELECT id,code,kind,state,requested,actual FROM af_command WHERE application_id=? ORDER BY id",id));a.put("timeline",s.rows("SELECT action,old_state,new_state,note,created_at FROM af_log WHERE entity_type='application' AND entity_id=? ORDER BY id",id));return a;}
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public Map<String,Object> application(User u,long id){
+        u.roles("CENTER","PUBLIC");var a=s.one("SELECT * FROM af_application WHERE id=?"+(u.role().equals("PUBLIC")?" AND owner_id=?":""),u.role().equals("PUBLIC")?new Object[]{id,u.id()}:new Object[]{id});
+        var original=s.one("SELECT kind,state,expires_at,remaining,reserved FROM af_command WHERE id=?",a.get("original_id"));
+        a.put("originalFunds",map("remaining",original.get("remaining"),"reserved",original.get("reserved"),"available",amount(original,"remaining").subtract(amount(original,"reserved"))));
+        applicationIdentity(a);a.put("attachments",files.list("application",id));
+        var children=s.rows("SELECT id,code,kind,state,requested,actual FROM af_command WHERE application_id=? ORDER BY id",id);a.put("commands",children);
+        if(str(a,"kind").equals("返还"))a.put("fundsProgress",RefundProgress.describe(a,original,children,s.now()));
+        a.put("timeline",s.rows("SELECT action,old_state,new_state,note,created_at FROM af_log WHERE entity_type='application' AND entity_id=? ORDER BY id",id));return a;
+    }
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED,noRollbackFor=CommandTimeout.class) public Map<String,Object> apply(User u,Map<String,Object> b,String owner){u.roles("PUBLIC");s.lockPublicIdentity(u);require(u.verified()&&u.victimId()>0,"请先完成实名身份核验");long originalId=num(b,"originalId");var c=lockCommand(originalId);access(u,c);require(str(c,"kind").equals("止付"),"请选择原止付指令");deadlines(u,c,c);active(c);String kind=required(b,"kind",20);require(Set.of("返还","申诉").contains(kind),"申请类型无效");String reason=required(b,"reason",2000);BigDecimal amount=kind.equals("返还")?amount(b,"amount"):null;
         relationships.applicant(u,kind,c);Map<String,Object> receiving=null;
         if(kind.equals("返还")){require(amount.signum()>0,"申请金额须大于0");receiving=relationships.payee(num(b,"payeeBankId"),u.victimId(),num(c,"bank_id"));}else conflict(!hasAppeal(s,originalId),"该止付已有申诉待办或裁定，请查看原申请记录");

@@ -1,7 +1,7 @@
 // A detail request may finish after another selection, navigation or sign-out.
 export function createDetailLoader({request,start,commit,fail}){
  let sequence=0
- const embedded=new Set(['notices','blacklist'])
+ const embedded=new Set(['notices','blacklist','banks'])
  return {
   invalidate(){sequence++},
   version(){return sequence},

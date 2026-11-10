@@ -2,7 +2,7 @@
 
 Run after identity_regressions.py and account_application_regressions.py, then stop
 the disposable HTTP instance. Valid applications and completed refunds are kept
-alongside legacy rows to test versions 9 and 10 without erasing new work.
+alongside legacy rows to test versions 9, 10 and 11 without erasing new work.
 """
 from test_db import *
 from integration import BASE, Client, require, results
@@ -89,6 +89,29 @@ try:
     counts=sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')
     stop();start()
     require(sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')==counts,'耗尽冻结迁移重复启动不重复收尾或追加日志')
+    stop()
+    # Recreate old unpaid approvals using real failures, cancellations and completed freezes.
+    # Completed and partially credited refunds must retain their approval history.
+    unpaid=sql("SELECT a.id FROM af_application a JOIN af_command c ON c.id=a.original_id WHERE a.kind='返还' AND a.state='已失效' AND a.approved>0 AND c.state='已解除' AND NOT EXISTS (SELECT 1 FROM af_command x WHERE x.application_id=a.id AND x.actual>0) ORDER BY a.id").splitlines()
+    require(len(unpaid)>=4,'包含拒绝、超时、到期及申诉解除后的未入账历史样例')
+    application_history=sql('SELECT id,state,approved,note FROM af_application ORDER BY id')
+    commands_before=sql('SELECT * FROM af_command ORDER BY id')
+    balances_before=sql('SELECT id,available FROM af_bank ORDER BY id')
+    ledger_before=sql('SELECT * FROM af_ledger ORDER BY id')
+    sql(f"UPDATE af_application SET state='核定通过' WHERE id IN ({','.join(unpaid)})")
+    sql('DELETE FROM af_migration WHERE version=11')
+    start();center=Client('center')
+    require(sql('SELECT COUNT(*) FROM af_migration WHERE version=11')=='1','未入账申请收尾登记第11版迁移')
+    require(sql('SELECT id,state,approved,note FROM af_application ORDER BY id')==application_history,
+        '只结束旧未入账核定申请；已入账、部分入账和有效冻结下的申请均保持原状')
+    require(sql('SELECT * FROM af_command ORDER BY id')==commands_before,'升级保留拒绝、超时、取消及成功指令历史')
+    require(sql('SELECT id,available FROM af_bank ORDER BY id')==balances_before
+        and sql('SELECT * FROM af_ledger ORDER BY id')==ledger_before,'第11版迁移不改变余额、不再次划款、不重写资金流水')
+    require(center.call('/reconciliation')['ok'] and center.call('/audit/verify')['ok'],'申请收尾迁移后对账及审计通过')
+    counts=sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')
+    stop();start()
+    require(sql('SELECT (SELECT COUNT(*) FROM af_log),(SELECT COUNT(*) FROM af_application),(SELECT COUNT(*) FROM af_command)')==counts,
+        '再次启动不重复结束申请或追加第11版迁移日志')
 except Exception as e:error=str(e)
 finally:stop()
 report={'status':'failed' if error else 'passed','steps':len(results),'error':error,'results':results}

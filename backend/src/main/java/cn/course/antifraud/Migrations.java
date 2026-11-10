@@ -137,6 +137,14 @@ public class Migrations implements CommandLineRunner {
                     }
                     mark(10);
                 });
+                if(!applied(11))tx.executeWithoutResult(status->{
+                    // A completed freeze may still have an approved refund that never credited.
+                    // Reconcile workflow status only, without rewriting approvals or money history.
+                    for(var c:s.rows("SELECT c.id FROM af_command c WHERE c.kind='止付' AND c.state IN ('已解除','已作废','拒绝执行') AND EXISTS (SELECT 1 FROM af_application a WHERE a.original_id=c.id AND a.kind='返还' AND a.state='核定通过' AND NOT EXISTS (SELECT 1 FROM af_command x WHERE x.application_id=a.id AND x.kind='返还' AND x.actual>0)) ORDER BY c.id FOR UPDATE")){
+                        Commands.endApplications(s,num(c,"id"),null,"升级核对：原止付已结束，未入账的返还申请不再具备执行条件");
+                    }
+                    mark(11);
+                });
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }

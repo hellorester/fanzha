@@ -97,6 +97,7 @@ jobs:
           python tests/lifecycle_regressions.py
           python tests/identity_regressions.py
           python tests/account_application_regressions.py
+          python tests/refund_completion_regressions.py
           kill "$server_pid"
           wait "$server_pid" || true
           python tests/identity_migration.py

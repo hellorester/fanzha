@@ -120,8 +120,9 @@ def run():
         else:holder.call('/applications',{'kind':'申诉','originalId':cid,'reason':tag},expected=409)
         require(sql(f'SELECT state FROM af_command WHERE id={cid}')=='已解除' and sql(f"SELECT COUNT(*) FROM af_ledger WHERE command_id={cid} AND action='到期解除'")=='1',entry+'触发到期并提交唯一释放流水')
         require(holder.call(f'/applications/{appeal}')['state']=='已失效','待补材料的申诉随冻结到期结束')
-        expected='核定通过' if child else '已失效'
-        require(public.call(f'/applications/{refund}')['state']==expected,'保留已核定决定，尚未核定的申请转失效')
+        ended=public.call(f'/applications/{refund}')
+        require(ended['state']=='已失效' and float(ended['fundsProgress']['credited'])==0,'未入账申请随冻结到期失效，已核定不等于已到账')
+        if child:require(float(ended['approved'])==30 and ended['note']==tag,'到期失效保留核定金额及原审核意见')
 
     # Identity changes cannot be used to continue someone else's subject-linked appeal.
     aid,cid,vid=prepared();app=apply(cid,'申诉')
