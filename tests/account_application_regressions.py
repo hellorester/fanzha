@@ -31,6 +31,8 @@ def run():
     first_person, other_person = person('首次实名'), person('其他实名')
     verified_body = {**body, 'verified': True, 'victimId': first_person}
     center.call(f'/users/{uid}', verified_body)
+    unverified.call('/session', expected=401)
+    unverified = Client(body['username'])
     require(unverified.call('/session')['user']['verified'], '举报后的首次实名核验可成功')
     require(sql(f"SELECT victim_id IS NULL FROM af_report WHERE id={original_report['id']}") == '1',
         '首次实名不追溯把匿名提供的线索改成本人受损')
@@ -55,7 +57,7 @@ def run():
         try:
             return report(race_user)
         except AssertionError as exc:
-            if 'received 409' not in str(exc):
+            if 'received 401' not in str(exc) and 'received 409' not in str(exc):
                 raise
             return None
 
@@ -67,6 +69,7 @@ def run():
         submitted, verified = pool.submit(racing_report), pool.submit(racing_verify)
         raced = submitted.result(); verified.result()
     if raced is None:
+        race_user = Client(race_body['username'])
         raced = report(race_user)
     require(sql(f'SELECT victim_id FROM af_user WHERE id={race_id}') == str(race_person)
         and sql(f"SELECT owner_id FROM af_report WHERE id={raced['id']}") == str(race_id),

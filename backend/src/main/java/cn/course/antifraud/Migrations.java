@@ -150,6 +150,20 @@ public class Migrations implements CommandLineRunner {
                     foreignKey("af_article","fk_article_cover","cover_id","af_attachment");
                     mark(12);
                 }
+                if(!applied(13)){
+                    column("af_user","version","BIGINT");
+                    column("af_user","session_version","BIGINT");
+                    column("af_command","timeout_minutes","INT");
+                    long timeout=30;var latest=s.optional("SELECT data FROM af_config ORDER BY id DESC LIMIT 1");
+                    if(latest!=null){long configured=num(s.decode(str(latest,"data")),"timeoutMinutes");if(configured>0)timeout=configured;}
+                    s.db.update("UPDATE af_user SET version=1 WHERE version IS NULL OR version<1");
+                    s.db.update("UPDATE af_user SET session_version=1 WHERE session_version IS NULL OR session_version<1");
+                    s.db.update("UPDATE af_command SET timeout_minutes=? WHERE timeout_minutes IS NULL OR timeout_minutes<1",timeout);
+                    s.db.execute("ALTER TABLE af_user MODIFY COLUMN version BIGINT NOT NULL DEFAULT 1");
+                    s.db.execute("ALTER TABLE af_user MODIFY COLUMN session_version BIGINT NOT NULL DEFAULT 1");
+                    s.db.execute("ALTER TABLE af_command MODIFY COLUMN timeout_minutes INT NOT NULL DEFAULT 30");
+                    mark(13);
+                }
             }finally{
                 try(var statement=lock.prepareStatement("SELECT RELEASE_LOCK(?)")){statement.setString(1,name);statement.execute();}
             }

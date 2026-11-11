@@ -19,4 +19,4 @@ const fundsProgressTones={
  '执行失败':'red','等待执行':'blue','等待核定':'amber',
  '未通过核定':'red','申请已失效':'gray','办理已结束':'gray'
 }
-export const statusTone=(s)=>Object.hasOwn(fundsProgressTones,s)?fundsProgressTones[s]:/失效|已取消|已结束/.test(s)?'gray':/拒绝|驳回|未完成|未处理|失败|高|超时/.test(s)?'red':/已闭环|已解除|已执行|已完成|已归档|已回传|核定通过|已发布|低/.test(s)?'green':/受理|待|中|已送达|已核实|已归并/.test(s)?'amber':'blue'
+export const statusTone=(s)=>Object.hasOwn(fundsProgressTones,s)?fundsProgressTones[s]:/失效|已取消|已结束|停用|未核验|不适用/.test(s)?'gray':/拒绝|驳回|未完成|未处理|失败|高|超时|冲突/.test(s)?'red':/已闭环|已解除|已执行|已完成|已归档|已回传|核定通过|已发布|已核验|启用|低/.test(s)?'green':/受理|待|中|已送达|已核实|已归并/.test(s)?'amber':'blue'

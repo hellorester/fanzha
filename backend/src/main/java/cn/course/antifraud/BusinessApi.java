@@ -51,7 +51,9 @@ public class BusinessApi {
  @GetMapping("/reconciliation") public Object reconciliation(HttpServletRequest r){return reconciliation.check(auth.user(r));}
  @GetMapping("/audit/verify") public Object verifyAudit(HttpServletRequest r){return audit.verify(auth.user(r));}
  @GetMapping("/people") public Object people(HttpServletRequest r){return relationships.people(auth.user(r));}
+@GetMapping("/people/{id}") public Object personDetail(HttpServletRequest r,@PathVariable long id){return relationships.person(auth.user(r),id);}
  @PostMapping("/people") public Object person(HttpServletRequest r,@RequestBody Map<String,Object> b){return map("id",relationships.person(auth.user(r),b));}
+@PostMapping("/people/{id}") public Object personSave(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){return map("id",relationships.person(auth.user(r),id,b));}
  @PostMapping("/banks") public Object bankCreate(HttpServletRequest r,@RequestBody Map<String,Object> b){return map("id",relationships.bank(auth.user(r),0,b));}
  @PostMapping("/banks/{id}/owner") public Object bankOwner(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){return map("id",relationships.bank(auth.user(r),id,b));}
  @PostMapping("/alerts/{id}/accounts") public Object linkAccount(HttpServletRequest r,@PathVariable long id,@RequestBody Map<String,Object> b){relationships.link(auth.user(r),id,b);return map("ok",true);}

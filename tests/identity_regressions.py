@@ -42,13 +42,17 @@ def run():
     center.call(f'/alerts/{aid}/close',{'note':'已核实未发生资金交易，完成上门提醒'})
     require(center.call(f'/alerts/{aid}')['state']=='已闭环','无资金账户的线索可以完成核查闭环')
     # An administrator can establish a bank relationship without permitting self-asserted ownership.
-    unbanked.call('/banks',{'personId':person,'number':'6222000000000191'},expected=403)
-    bank=center.call('/banks',{'personId':person,'number':'6222000000000191','orgId':1,'opening':0,'note':'核对本人账户开户凭证'})['id']
+    number='6222'+str(uuid.uuid4().int % 10**12).zfill(12);second_number=str(int(number)+1)
+    formatted_number=number[:4]+' '+number[4:8]+'-'+number[8:12]+' '+number[12:]
+    unbanked.call('/banks',{'personId':person,'number':number},expected=403)
+    bank=center.call('/banks',{'personId':person,'number':number,'orgId':1,'opening':0,'note':'核对本人账户开户凭证'})['id']
     require([b['id'] for b in unbanked.call('/banks')]==[bank],'经中心核验后只出现本人的账户')
-    center.call(f'/banks/{bank}/owner',{'personId':1,'note':'尝试转移账户身份'},expected=409)
+    center.call(f'/banks/{bank}/owner',{'personId':1,'note':'开户资料更正专项验证'})
+    require(not unbanked.call('/banks'),'尚未进入业务的账户更正户主后立即按新归属隔离')
+    center.call(f'/banks/{bank}/owner',{'personId':person,'note':'核对原始开户资料后恢复正确户主'})
 
     # Encrypted account searches must filter within the role scope before counting and paging.
-    second_bank=center.call('/banks',{'personId':person,'number':'6222000000000192','orgId':2,'opening':0,'note':'另一机构的本人账户'})['id']
+    second_bank=center.call('/banks',{'personId':person,'number':second_number,'orgId':2,'opening':0,'note':'另一机构的本人账户'})['id']
     pay2=Client('pay2')
     def bank_search(actor,q,**paging):return actor.call('/list/banks?'+urlencode({'q':q,**paging}))
     for actor in (center,unbanked):
@@ -56,7 +60,7 @@ def run():
         require(first['total']==second['total']==2 and [x['id'] for x in first['items']]==[bank]
             and [x['id'] for x in second['items']]==[second_bank],'按加密户名匹配后统计与分页保持完整')
         require(not bank_search(actor,tag,page=3,size=1)['items'],'户名搜索超出末页时不重复记录')
-        for query in ('6222000000000191','6222 0000-0000 0191'):
+        for query in (number,formatted_number):
             found=bank_search(actor,query)
             require(found['total']==1 and found['items'][0]['id']==bank,'完整账号使用规范化指纹精确匹配')
             require(not any(k.endswith('_enc') or k.endswith('_hash') for k in found['items'][0]),'搜索不返回加密值或指纹')
@@ -65,18 +69,18 @@ def run():
     for actor,expected in ((pay,bank),(pay2,second_bank)):
         found=bank_search(actor,tag)
         require(found['total']==1 and found['items'][0]['id']==expected,'户名搜索仍按支付机构隔离')
-    require(bank_search(pay2,'6222000000000191')['total']==0,'精确账号不能跨机构搜索')
+    require(bank_search(pay2,number)['total']==0,'精确账号不能跨机构搜索')
     org_name=next(b for b in unbanked.call('/banks') if b['id']==bank)['org_name']
     require([b['id'] for b in bank_search(unbanked,org_name[:2])['items']]==[bank],'机构名支持模糊匹配并保留群众归属范围')
     for actor in (reporter,victim,holder):
-        for query in (tag,'6222000000000191'):
+        for query in (tag,number):
             found=bank_search(actor,query)
             require(found['total']==0 and not found['items'],'其他群众不能借户名或完整账号搜索到他人账户')
     pending_user=username+'_pending'
     center.call('/users',{'username':pending_user,'password':'Demo2026!','displayName':'尚未核验','role':'PUBLIC','verified':False,'enabled':True})
     require(bank_search(Client(pending_user),tag)['total']==0,'未实名账号不能搜索资金账户')
-    Client().call('/list/banks?q=6222000000000191',expected=401)
-    grid.call('/list/banks?q=6222000000000191',expected=403)
+    Client().call('/list/banks?q='+number,expected=401)
+    grid.call('/list/banks?q='+number,expected=403)
 
     # Reporter A, victim B, frozen-account holder C are three independent people.
     r=report(reporter,'网址','https://identity-risk.example/redirect?case='+tag,'代他人举报')

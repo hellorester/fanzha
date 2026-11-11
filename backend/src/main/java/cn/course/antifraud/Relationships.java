@@ -36,15 +36,25 @@ public class Relationships {
     public List<Map<String,Object>> people(User u){
         u.administrator();return s.rows("SELECT p.*,c.name community_name FROM af_victim p LEFT JOIN af_community c ON c.id=p.community_id ORDER BY p.id").stream().peek(p->{p.put("name",s.decrypt(p.remove("name_enc")));p.put("phone",mask(s.decrypt(p.remove("phone_enc"))));p.put("identity",mask(s.decrypt(p.remove("identity_enc"))));}).toList();
     }
+    public Map<String,Object> person(User u,long id){u.administrator();var p=s.one("SELECT id,name_enc,phone_enc,identity_enc,community_id FROM af_victim WHERE id=?",id);p.put("name",s.decrypt(p.remove("name_enc")));p.put("phone",s.decrypt(p.remove("phone_enc")));p.put("identity",s.decrypt(p.remove("identity_enc")));return p;}
+    static String normalizeIdentity(String value){String normalized=java.text.Normalizer.normalize(value,java.text.Normalizer.Form.NFKC).trim().replaceAll("[\\s\\-_‐‑‒–—]+","").toUpperCase(Locale.ROOT);require(!normalized.isEmpty(),"证件标识不能为空");return normalized;}
     @Transactional(isolation=Isolation.READ_COMMITTED)
-    public long person(User u,Map<String,Object> b){
-        u.administrator();String name=required(b,"name",80),identity=required(b,"identity",80),phone=required(b,"phone",30),note=required(b,"note",1000);
+    public long person(User u,Map<String,Object> b){return person(u,0,b);}
+    @Transactional(isolation=Isolation.READ_COMMITTED)
+    public long person(User u,long id,Map<String,Object> b){
+        u.administrator();String name=required(b,"name",80),identity=normalizeIdentity(required(b,"identity",80)),phone=required(b,"phone",30),note=required(b,"note",1000);
         Rules.normalize("号码",phone);s.one("SELECT id FROM af_community WHERE id=?",num(b,"communityId"));
         // Only administrators can establish verified identities; login/profile fields cannot assert ownership.
         s.one("SELECT id FROM af_rule_state WHERE id=1 FOR UPDATE");
-        for(var p:s.rows("SELECT identity_enc FROM af_victim"))conflict(!s.decrypt(p.get("identity_enc")).equals(identity),"该证件身份已有人员资料，请使用现有记录");
-        long id=s.insert("INSERT INTO af_victim(name_enc,phone_enc,identity_enc,community_id) VALUES(?,?,?,?)",s.encrypt(name),s.encrypt(phone),s.encrypt(identity),num(b,"communityId"));
-        s.log(u,"核验人员身份","person",id,null,"已核验",note);return id;
+        var old=id==0?null:s.one("SELECT * FROM af_victim WHERE id=? FOR UPDATE",id);
+        for(var p:s.rows("SELECT id,identity_enc FROM af_victim WHERE id<>?",id)){
+            String existing=s.decrypt(p.get("identity_enc"));
+            if(!existing.isBlank())conflict(!normalizeIdentity(existing).equals(identity),"该证件身份已有人员资料，请使用现有记录");
+        }
+        if(old==null)id=s.insert("INSERT INTO af_victim(name_enc,phone_enc,identity_enc,community_id) VALUES(?,?,?,?)",s.encrypt(name),s.encrypt(phone),s.encrypt(identity),num(b,"communityId"));
+        else{s.db.update("UPDATE af_victim SET name_enc=?,phone_enc=?,identity_enc=?,community_id=? WHERE id=?",s.encrypt(name),s.encrypt(phone),s.encrypt(identity),num(b,"communityId"),id);s.db.update("UPDATE af_bank SET holder_enc=? WHERE owner_person_id=?",s.encrypt(name),id);}
+        String change=old==null?"新建实名档案":"姓名 "+s.decrypt(old.get("name_enc"))+" → "+name+"；证件 "+mask(s.decrypt(old.get("identity_enc")))+" → "+mask(identity)+"；社区 #"+num(old,"community_id")+" → #"+num(b,"communityId");
+        s.log(u,old==null?"核验人员身份":"更正实名资料","person",id,old==null?null:"已核验","已核验",change+"；原因："+note);return id;
     }
     @Transactional(isolation=Isolation.READ_COMMITTED)
     public long bank(User u,long id,Map<String,Object> b){
@@ -55,8 +65,9 @@ public class Relationships {
             s.db.update("INSERT INTO af_bank_origin(bank_id,opening,source,created_at) VALUES(?,?,'核验开户',?)",id,opening,s.now());
         }else{
             var old=s.one("SELECT * FROM af_bank WHERE id=? FOR UPDATE",id);
-            conflict(num(old,"owner_person_id")==0||num(old,"owner_person_id")==person,"已核验账户不能转给另一实名主体；请新建其本人账户");
+            if(num(old,"owner_person_id")>0&&num(old,"owner_person_id")!=person){long used=s.count("SELECT (SELECT COUNT(*) FROM af_command WHERE bank_id=?)+(SELECT COUNT(*) FROM af_alert_bank WHERE bank_id=?)+(SELECT COUNT(*) FROM af_application WHERE payee_bank_id=?)+(SELECT COUNT(*) FROM af_ledger WHERE bank_id=?)",id,id,id,id);conflict(used==0,"该账户已有线索核验或资金业务记录，不能更改户主；请保留原始证据并新建正确账户");}
             s.db.update("UPDATE af_bank SET owner_person_id=?,holder_enc=? WHERE id=?",person,p.get("name_enc"),id);
+            s.log(u,"更正账户户主","bank",id,"实名主体 #"+num(old,"owner_person_id"),"实名主体 #"+person,note);return id;
         }
         s.log(u,"核验账户归属","bank",id,null,"已核验","实名主体 #"+person+"；"+note);return id;
     }

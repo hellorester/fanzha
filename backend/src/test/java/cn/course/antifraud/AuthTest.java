@@ -60,4 +60,23 @@ class AuthTest {
         var user=auth.toUser(row);assertEquals(accounts==1,user.verified());assertEquals(accounts==1?9:0,user.victimId());
         row.put("verified",false);user=auth.toUser(row);assertFalse(user.verified());assertEquals(0,user.victimId());
     }
+    @Test void usernamesUseOneCanonicalFormForLookupAndRateLimits(){
+        assertEquals("center",Auth.canonicalUsername("  ＣＥＮＴＥＲ  "));
+        Support support=mock(Support.class);QueryLimiter limiter=mock(QueryLimiter.class);
+        when(support.optional("SELECT * FROM af_user WHERE username=?","center")).thenReturn(map("id",7,"username","center","display_name","中心","role","CENTER","enabled",true,"password_hash",PASSWORD_HASH,"session_version",3));
+        var request=new MockHttpServletRequest();var body=map("username"," ＣＥＮＴＥＲ ","password","LoginTest2026!","role","CENTER");
+        new Auth(support,limiter).login(request,body);
+        verify(limiter).check("login-failure","center",8);
+        verify(limiter).clear("login-failure","center");
+        assertEquals(3L,request.getSession().getAttribute("sessionVersion"));
+    }
+    @Test void changingCriticalAccountDataInvalidatesExistingSession(){
+        Support support=mock(Support.class);
+        when(support.optional("SELECT * FROM af_user WHERE id=? AND enabled=TRUE",7L)).thenReturn(map("id",7,"username","account","display_name","登录验证","role","PUBLIC","enabled",true,"verified",false,"session_version",2));
+        Auth auth=new Auth(support,mock(QueryLimiter.class));auth.ready();
+        var request=new MockHttpServletRequest("GET","/api/session");var session=request.getSession();session.setAttribute("uid",7L);session.setAttribute("sessionVersion",1L);
+        var error=assertThrows(Problem.class,()->auth.preHandle(request,new org.springframework.mock.web.MockHttpServletResponse(),new Object()));
+        assertEquals(401,error.status);
+        assertThrows(IllegalStateException.class,()->session.getAttribute("uid"));
+    }
 }

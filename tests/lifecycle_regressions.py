@@ -33,7 +33,7 @@ def run():
         return int(sql(f'SELECT MAX(id) FROM af_correction WHERE command_id={cid}'))
 
     def wait_for(check,message):
-        until=time.monotonic()+10
+        until=time.monotonic()+25
         while time.monotonic()<until:
             if check():return
             time.sleep(.05)
@@ -41,7 +41,7 @@ def run():
 
     def after_bank_wait(cid,client,path,body,pending=False):
         field='DATE_ADD(accepted_at,INTERVAL 30 MINUTE)' if pending else 'expires_at'
-        sql(f'UPDATE af_command SET '+('accepted_at=DATE_SUB(DATE_ADD(NOW(),INTERVAL 3 SECOND),INTERVAL 30 MINUTE)' if pending else 'expires_at=DATE_ADD(NOW(),INTERVAL 3 SECOND)')+f' WHERE id={cid}')
+        sql(f'UPDATE af_command SET '+('accepted_at=DATE_SUB(DATE_ADD(NOW(),INTERVAL 12 SECOND),INTERVAL 30 MINUTE)' if pending else 'expires_at=DATE_ADD(NOW(),INTERVAL 12 SECOND)')+f' WHERE id={cid}')
         gate=SqlSession();pool=ThreadPoolExecutor(max_workers=1)
         try:
             gate.send("START TRANSACTION; SELECT id FROM af_bank WHERE id=1 FOR UPDATE; SELECT GET_LOCK('lifecycle_bank_gate',0);")

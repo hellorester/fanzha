@@ -34,6 +34,12 @@ class DeadlineTest {
             @Override public LocalDateTime now(){return clock;}
         };
     }
+    @org.junit.jupiter.api.Test void commandKeepsTimeoutCapturedWhenItWasCreated(){
+        var command=map("state","已送达","created_at",base,"timeout_minutes",60);
+        assertEquals(base.plusMinutes(60),Commands.deadline(command,15));
+        command.put("state","受理中");command.put("accepted_at",base.plusMinutes(5));
+        assertEquals(base.plusMinutes(65),Commands.deadline(command,15));
+    }
     @ParameterizedTest @ValueSource(ints={-1,0,1})
     void deliveryAndReceiptTimeoutAtTheExactSecond(int offset){
         for(String state:List.of("已送达","受理中")){

@@ -5,11 +5,12 @@ export const verificationOptions=[
 
 const asText=value=>String(value??'').trim()
 
-export function personOptions(values,format=asText){
- return (values||[]).map(person=>({
-  value:person.id,
-  label:[format(person.name),person.community_name?format(person.community_name):'',person.identity?'证件 '+person.identity:''].filter(Boolean).join(' · ')
- }))
+export function personOptions(values,format=asText,currentAccountId=0){
+ return (values||[]).map(person=>{
+  const count=Number(person.active_account_count||0),current=Number(person.active_account_id)===Number(currentAccountId)
+  const binding=count>1?'存在账号关联冲突':count===1?(current?'已关联当前账号':'已被 '+format(person.active_username||'其他账号')+' 使用'):'尚未绑定账号'
+  return {value:person.id,label:[format(person.name),person.community_name?format(person.community_name):'',person.identity?'证件 '+person.identity:'',binding].filter(Boolean).join(' · '),disabled:count>1||count===1&&!current}
+ })
 }
 
 export function resetUserRole(data){
@@ -21,7 +22,7 @@ export function resetUserRole(data){
 }
 
 export function resetVerification(data){
- if(data.verification!=='VERIFIED')data.victimId=''
+ data.victimId=''
 }
 
 export function normalizeUserData(data){
@@ -36,7 +37,9 @@ export function normalizeUserData(data){
   victimId:verified?data.victimId:'',
   verified,
   enabled:Boolean(data.enabled),
-  admin:role==='CENTER'&&Boolean(data.admin)
+  admin:role==='CENTER'&&Boolean(data.admin),
+  version:Number(data.version||0),
+  reason:data.reason||''
  }
 }
 
@@ -44,7 +47,7 @@ export function userSummary(data,meta,roleNames,format=asText){
  const items=[{label:'业务角色',value:roleNames[data.role]||'请选择'}]
  if(data.role==='PUBLIC'){
   const person=(meta.victims||[]).find(item=>String(item.id)===String(data.victimId))
-  items.push({label:'实名状态',value:data.verification==='VERIFIED'?(person?personOptions([person],format)[0].label:'请选择实名人员'):'暂未核验'})
+  items.push({label:'实名状态',value:data.verification==='VERIFIED'?(person?personOptions([person],format,data.accountId||0)[0].label:'请选择实名人员'):'暂未核验'})
  }else if(data.role==='PAYMENT'){
   const org=(meta.orgs||[]).find(item=>String(item.id)===String(data.orgId))
   items.push({label:'所属机构',value:org?format(org.name):'请选择支付机构'})

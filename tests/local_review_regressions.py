@@ -188,7 +188,7 @@ def run():
         center.call('/attachments', raw=data, ctype='multipart/form-data; boundary='+boundary, expected=429)
         sql('DELETE FROM af_query_limit'); fill('login-ip', '127.0.0.1', 240)
         anon.call('/login', {'username': tag, 'password': 'incorrect'}, expected=429)
-        sql('DELETE FROM af_query_limit'); fill('login-failure', tag, 8)
+        sql('DELETE FROM af_query_limit'); fill('login-failure', tag.lower(), 8)
         anon.call('/login', {'username': tag, 'password': 'incorrect'}, expected=429)
         sql('UPDATE af_query_limit SET window_end=DATE_SUB(NOW(),INTERVAL 1 SECOND)')
         anon.call('/login', {'username': tag, 'password': 'incorrect'}, expected=401)

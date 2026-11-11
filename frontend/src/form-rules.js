@@ -2,6 +2,13 @@ export const executionReasonRequired = data => ['部分执行', '拒绝执行'].
 
 export const reviewAmountRequired = data => data.decision === '通过'
 
+export const reviewDecisions = application => application.kind === '返还' ? ['通过', '驳回'] : application.state === '待受理' ? ['受理'] : ['补正', '维持', '成立']
+
+export function reviewDecision(application, requested = '') {
+  const choices = reviewDecisions(application)
+  return choices.includes(requested) ? requested : choices[0]
+}
+
 export const configFieldLimits = Object.freeze({
   medium: { min: 1, max: 100 },
   high: { min: 1, max: 100 },
@@ -40,4 +47,14 @@ export function syncExecutionResult(data, { kind = '止付', requested = null, c
   if (data.result === '部分执行' && requested !== null && requested !== undefined && requested !== '' && Number(data.amount) >= Number(requested)) {
     data.amount = ''
   }
+}
+
+export function validateConfigForm(data) {
+  const weights = [0, 1, 2, 3, 4].map(index => Number(data['w' + index]))
+  if (weights.some(value => !Number.isInteger(value) || value < 1 || value > 100)) return '五项权重都应为1至100的整数'
+  const total = weights.reduce((sum, value) => sum + value, 0)
+  if (total !== 100) return `五项权重合计应为100%，当前为${total}%`
+  const medium = Number(data.medium), high = Number(data.high)
+  if (!Number.isInteger(medium) || !Number.isInteger(high) || high <= medium) return '高风险阈值必须大于中风险阈值'
+  return ''
 }

@@ -4,6 +4,7 @@ import jakarta.servlet.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.*;
+import java.text.Normalizer;
 import java.util.*;
 import static cn.course.antifraud.Support.*;
 
@@ -32,7 +33,13 @@ public class Auth implements HandlerInterceptor, WebMvcConfigurer {
             if(!java.security.MessageDigest.isEqual(csrf.getBytes(),Objects.toString(req.getHeader("X-CSRF-Token"),"").getBytes()))throw new Problem(403,"页面会话已更新，请刷新后重试");
         }
         Object uid=session.getAttribute("uid");
-        if(uid!=null){Map<String,Object> m=s.optional("SELECT * FROM af_user WHERE id=? AND enabled=TRUE",uid);if(m==null){session.invalidate();throw new Problem(401,"账号已停用，请重新登录");}req.setAttribute("user",toUser(m));}
+        if(uid!=null){
+            Map<String,Object> m=s.optional("SELECT * FROM af_user WHERE id=? AND enabled=TRUE",uid);
+            if(m==null){session.invalidate();throw new Problem(401,"账号已停用，请重新登录");}
+            long sessionVersion=session.getAttribute("sessionVersion") instanceof Number value?value.longValue():-1;
+            if(num(m,"session_version")!=sessionVersion){session.invalidate();throw new Problem(401,"账号资料或密码已更新，请重新登录");}
+            req.setAttribute("user",toUser(m));
+        }
         String path=req.getRequestURI();
         boolean publicPath=Set.of("/api/session","/api/login","/api/anonymous/query").contains(path)||path.equals("/api/reports")&&req.getMethod().equals("POST")||path.startsWith("/api/articles")&&req.getMethod().equals("GET")||path.equals("/api/attachments")&&req.getMethod().equals("POST")||path.startsWith("/api/attachments/")&&Set.of("GET","DELETE").contains(req.getMethod());
         if(!publicPath&&optional(req)==null)throw new Problem(401,"请先登录");
@@ -45,8 +52,10 @@ public class Auth implements HandlerInterceptor, WebMvcConfigurer {
         return new User(num(m,"id"),str(m,"username"),str(m,"display_name"),str(m,"role"),num(m,"org_id"),num(m,"community_id"),verified?victim:0,verified,yes(m,"admin"));
     }
 
+    static String canonicalUsername(String value){return Normalizer.normalize(value,Normalizer.Form.NFKC).trim().toLowerCase(Locale.ROOT);}
+
     public Map<String,Object> login(HttpServletRequest req,Map<String,Object> b){
-        String username=required(b,"username",60),password=required(b,"password",200);
+        String username=canonicalUsername(required(b,"username",60)),password=required(b,"password",200);require(!username.isEmpty(),"请输入登录账号");
         String selectedRole=str(b,"role");
         if(!selectedRole.isEmpty()&&!Set.of("PUBLIC","CENTER","PAYMENT","GRID").contains(selectedRole))throw new Problem(400,"请选择有效的登录身份");
         limiter.consume("login-ip",Objects.toString(req.getRemoteAddr(),"local"),240,60);
@@ -54,6 +63,6 @@ public class Auth implements HandlerInterceptor, WebMvcConfigurer {
         Map<String,Object> m=s.optional("SELECT * FROM af_user WHERE username=?",username);
         if(m==null||!yes(m,"enabled")||!checkPassword(password,str(m,"password_hash"))||str(m,"role").equals("PAYMENT")&&num(m,"org_id")==0||str(m,"role").equals("GRID")&&num(m,"community_id")==0){limiter.consume("login-failure",username,8,300);throw new Problem(401,"账号、密码或账号状态不正确");}
         if(!selectedRole.isEmpty()&&!selectedRole.equals(str(m,"role")))throw new Problem(403,"所选身份与账号不符，请重新选择登录身份。");
-        limiter.clear("login-failure",username);req.getSession().invalidate();HttpSession session=req.getSession(true);session.setAttribute("uid",num(m,"id"));User u=toUser(m);s.log(u,"登录","account",u.id(),null,null,"登录成功");return map("user",u,"csrf",token(session));
+        limiter.clear("login-failure",username);req.getSession().invalidate();HttpSession session=req.getSession(true);session.setAttribute("uid",num(m,"id"));session.setAttribute("sessionVersion",num(m,"session_version"));User u=toUser(m);s.log(u,"登录","account",u.id(),null,null,"登录成功");return map("user",u,"csrf",token(session));
     }
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {configFieldLimits,executionAmountMax,executionReasonRequired,reviewAmountRequired,syncExecutionResult,syncReviewDecision,syncVisitResult} from '../src/form-rules.js'
+import {configFieldLimits,executionAmountMax,executionReasonRequired,reviewAmountRequired,reviewDecision,reviewDecisions,syncExecutionResult,syncReviewDecision,syncVisitResult,validateConfigForm} from '../src/form-rules.js'
 
 test('rejected execution clears money and requires a reason',()=>{
  const data={result:'拒绝执行',amount:'600.00'}
@@ -50,4 +50,17 @@ test('rule editor uses the same numeric bounds as backend validation',()=>{
  assert.deepEqual(configFieldLimits.high,{min:1,max:100})
  for(const key of ['mergeHours','freezeHours','extensionHours','timeoutMinutes'])assert.deepEqual(configFieldLimits[key],{min:1,max:1680})
  assert.deepEqual(configFieldLimits.maxExtensions,{min:0,max:10})
+})
+
+test('appeal review always opens with a decision that exists in the current state',()=>{
+ assert.deepEqual(reviewDecisions({kind:'申诉',state:'审核中'}),['补正','维持','成立'])
+ assert.equal(reviewDecision({kind:'申诉',state:'审核中'},'受理'),'补正')
+ assert.equal(reviewDecision({kind:'申诉',state:'待受理'}),'受理')
+})
+
+test('rule editor catches cross-field errors before submitting',()=>{
+ const valid={w0:25,w1:15,w2:15,w3:30,w4:15,medium:40,high:70}
+ assert.equal(validateConfigForm(valid),'')
+ assert.match(validateConfigForm({...valid,w0:20}),/合计应为100/)
+ assert.match(validateConfigForm({...valid,medium:80,high:70}),/高风险阈值/)
 })

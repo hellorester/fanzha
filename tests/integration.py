@@ -1,5 +1,5 @@
 """Runs real HTTP workflows against the local course prototype; uses virtual data only."""
-import urllib.request,urllib.error,urllib.parse,http.cookiejar,json,uuid,datetime,time,pathlib,sys,os,base64
+import urllib.request,urllib.error,urllib.parse,http.cookiejar,json,uuid,datetime,time,pathlib,sys,os,base64,re
 sys.stdout.reconfigure(encoding='utf-8')
 BASE=os.environ.get('TEST_BASE_URL','').rstrip('/')
 if not BASE:
@@ -13,6 +13,14 @@ class Client:
   self.csrf=''; self.name=name or 'anonymous'; self.csrf=self.call('/session')['csrf']
   if name:self.csrf=self.call('/login',{'username':name,'password':'Demo2026!'})['csrf']
  def call(self,path,body=None,expected=200,raw=None,ctype=None,method=None):
+  if body is not None and isinstance(body,dict) and re.fullmatch(r'/users/\d+',path):
+   body=dict(body)
+   if 'version' not in body:
+    account_id=int(path.rsplit('/',1)[1])
+    account=next((item for item in self.call('/users') if int(item['id'])==account_id),None)
+    if account is None:raise AssertionError(f'{self.name} {path}: account not found before update')
+    body['version']=account['version']
+   body.setdefault('reason','自动化回归验证账号资料维护')
   headers={'X-CSRF-Token':self.csrf}
   data=raw if raw is not None else None if body is None else json.dumps(body,ensure_ascii=False).encode()
   if data is not None:headers['Content-Type']=ctype or 'application/json'

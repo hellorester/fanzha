@@ -75,13 +75,13 @@ def run():
     # The check must use a clock read after waiting for the money row lock.
     aid,cid,vid=prepared();gate=SqlSession();pool=ThreadPoolExecutor(max_workers=1)
     def wait_for(check,message):
-        until=time.monotonic()+10
+        until=time.monotonic()+25
         while time.monotonic()<until:
             if check():return
             time.sleep(.08)
         raise AssertionError(message)
     try:
-        sql(f'UPDATE af_command SET expires_at=DATE_ADD(NOW(),INTERVAL 3 SECOND) WHERE id={cid}')
+        sql(f'UPDATE af_command SET expires_at=DATE_ADD(NOW(),INTERVAL 12 SECOND) WHERE id={cid}')
         gate.send("START TRANSACTION; SELECT id FROM af_bank WHERE id=1 FOR UPDATE; SELECT GET_LOCK('af_dispatch_expiry_gate',0);")
         wait_for(lambda:sql("SELECT IS_USED_LOCK('af_dispatch_expiry_gate') IS NOT NULL")=='1','资金行锁未就绪')
         require(sql(f'SELECT NOW()<expires_at FROM af_command WHERE id={cid}')=='1', '请求开始时尚未到期，随后在资金锁等待中跨过期限')

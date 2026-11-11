@@ -29,7 +29,8 @@ public class Commands {
     }
     static LocalDateTime deadline(Map<String,Object> c,long timeoutMinutes){
         String state=str(c,"state");
-        if(Set.of("已送达","受理中").contains(state))return time(c.get("accepted_at")==null?c.get("created_at"):c.get("accepted_at")).plusMinutes(timeoutMinutes);
+        long snapshot=num(c,"timeout_minutes");if(snapshot<=0)snapshot=timeoutMinutes;
+        if(Set.of("已送达","受理中").contains(state))return time(c.get("accepted_at")==null?c.get("created_at"):c.get("accepted_at")).plusMinutes(snapshot);
         return str(c,"kind").equals("止付")&&Set.of("生效中","已延期").contains(state)?time(c.get("expires_at")):null;
     }
     private boolean expirePending(Map<String,Object> c,Map<String,Object> original,LocalDateTime now,User actor,String label){
@@ -154,7 +155,7 @@ public class Commands {
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED,noRollbackFor=CommandTimeout.class) public void adjudicate(User u,long id,Map<String,Object> b){u.roles("CENTER");var peek=s.one("SELECT * FROM af_application WHERE id=?",id);var c=lockCommand(num(peek,"original_id"));var a=s.one("SELECT * FROM af_application WHERE id=? FOR UPDATE",id);deadlines(u,c,c);relationships.validApplication(a,c);String decision=required(b,"decision",20),note=required(b,"note",2000),kind=str(a,"kind"),next;BigDecimal approved=null;String commandKind=null;
         if(kind.equals("返还")){conflict(str(a,"state").equals("待核定"),"申请已处理");require(Set.of("通过","驳回").contains(decision),"核定结论无效");next=decision.equals("通过")?"核定通过":"核定驳回";if(decision.equals("通过")){active(c);approved=amount(b,"amount");BigDecimal available=amount(c,"remaining").subtract(amount(c,"reserved"));require(approved.signum()>0&&approved.compareTo(amount(a,"amount"))<=0&&approved.compareTo(available)<=0,"核定金额超过申请额或剩余可返还额");s.db.update("UPDATE af_command SET reserved=reserved+? WHERE id=?",approved,c.get("id"));commandKind="返还";}}
         else{require(Set.of("受理","补正","维持","成立").contains(decision),"裁定动作无效");if(decision.equals("受理")){conflict(str(a,"state").equals("待受理"),"当前申请不可受理");next="审核中";}else{conflict(str(a,"state").equals("审核中"),"请先受理申诉");next=decision.equals("补正")?"驳回待补":decision.equals("维持")?"已维持":"已生成解除指令";if(decision.equals("成立")){active(c);commandKind="解除";}}}
-        if(commandKind!=null)s.insert("INSERT INTO af_command(code,kind,alert_id,original_id,application_id,bank_id,org_id,victim_id,requested,active_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",s.code(commandKind.equals("返还")?"TK":"JC"),commandKind,c.get("alert_id"),c.get("id"),id,c.get("bank_id"),c.get("org_id"),c.get("victim_id"),approved,"application:"+id,s.now());s.db.update("UPDATE af_application SET state=?,approved=?,note=?,updated_at=? WHERE id=?",next,approved,note,s.now(),id);s.log(u,"中心审核","application",id,str(a,"state"),next,note);
+        if(commandKind!=null)s.insert("INSERT INTO af_command(code,kind,alert_id,original_id,application_id,bank_id,org_id,victim_id,requested,active_key,timeout_minutes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",s.code(commandKind.equals("返还")?"TK":"JC"),commandKind,c.get("alert_id"),c.get("id"),id,c.get("bank_id"),c.get("org_id"),c.get("victim_id"),approved,"application:"+id,num(clues.config(),"timeoutMinutes"),s.now());s.db.update("UPDATE af_application SET state=?,approved=?,note=?,updated_at=? WHERE id=?",next,approved,note,s.now(),id);s.log(u,"中心审核","application",id,str(a,"state"),next,note);
     }
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED,noRollbackFor=CommandTimeout.class) public void extend(User u,long id,Map<String,Object> b){u.roles("CENTER");var c=lockCommand(id);require(str(c,"kind").equals("止付"),"只有止付可以延期");deadlines(u,c,c);active(c);var cfg=clues.config();conflict(num(c,"extension_count")<num(cfg,"maxExtensions"),"已经达到延期次数上限");String note=required(b,"note",1000);s.db.update("UPDATE af_command SET state='已延期',expires_at=?,extension_count=extension_count+1,period_version=period_version+1 WHERE id=?",time(c.get("expires_at")).plusHours(num(cfg,"extensionHours")),id);s.log(u,"申请延期","command",id,str(c,"state"),"已延期",note);}
     public void notice(long id,long version,String node,String message){s.db.update("INSERT IGNORE INTO af_notice(command_id,period_version,node,message,created_at) VALUES(?,?,?,?,?)",id,version,node,message,s.now());}
@@ -182,7 +183,7 @@ public class Commands {
         if(kind.equals("止付")){
             String key=c.get("alert_id")+":"+c.get("bank_id");
             conflict(s.count("SELECT COUNT(*) FROM af_command WHERE active_key=?",key)==0,"已有有效重发指令");
-            newId=s.insert("INSERT INTO af_command(code,kind,alert_id,bank_id,org_id,victim_id,requested,active_key,created_at) VALUES(?,'止付',?,?,?,?,?,?,?)",s.code("ZF"),c.get("alert_id"),c.get("bank_id"),c.get("org_id"),c.get("victim_id"),c.get("requested"),key,s.now());
+            newId=s.insert("INSERT INTO af_command(code,kind,alert_id,bank_id,org_id,victim_id,requested,active_key,timeout_minutes,created_at) VALUES(?,'止付',?,?,?,?,?,?,?,?)",s.code("ZF"),c.get("alert_id"),c.get("bank_id"),c.get("org_id"),c.get("victim_id"),c.get("requested"),key,num(clues.config(),"timeoutMinutes"),s.now());
         }else{
             active(original);long appId=num(c,"application_id");
             conflict(s.count("SELECT MAX(id) FROM af_command WHERE application_id=?",appId)==id,"已有后续重发记录，请处理最新指令");
@@ -192,7 +193,7 @@ public class Commands {
                 s.db.update("UPDATE af_command SET reserved=reserved+? WHERE id=?",amount,original.get("id"));
             }
             s.db.update("UPDATE af_command SET active_key=NULL WHERE id=?",id);
-            newId=s.insert("INSERT INTO af_command(code,kind,alert_id,original_id,application_id,bank_id,org_id,victim_id,requested,active_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",s.code(kind.equals("返还")?"TK":"JC"),kind,c.get("alert_id"),c.get("original_id"),appId,c.get("bank_id"),c.get("org_id"),c.get("victim_id"),c.get("requested"),"application:"+appId,s.now());
+            newId=s.insert("INSERT INTO af_command(code,kind,alert_id,original_id,application_id,bank_id,org_id,victim_id,requested,active_key,timeout_minutes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",s.code(kind.equals("返还")?"TK":"JC"),kind,c.get("alert_id"),c.get("original_id"),appId,c.get("bank_id"),c.get("org_id"),c.get("victim_id"),c.get("requested"),"application:"+appId,num(clues.config(),"timeoutMinutes"),s.now());
             s.log(u,"核实重发","application",appId,null,null,note);
         }
         s.db.update("UPDATE af_command SET retry_of=? WHERE id=?",id,newId);
