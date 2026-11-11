@@ -100,13 +100,12 @@ code,.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;letter-
 .account-popover>button{width:100%;margin-top:16px;justify-content:center}
 @media(max-width:900px){.mobile-account{display:block}.sidebar-footer{display:none}}
 .content{padding:28px 32px 38px;flex:1;min-width:0;width:100%;max-width:1540px;margin:0 auto}
-.page-heading{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;margin-bottom:24px}
-.page-title{grid-column:1;grid-row:1;min-width:0}
+.page-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px 16px;margin-bottom:24px}
+.page-title{flex:0 1 auto;min-width:0}
 .page-title h1{margin:0}
 .page-heading>div>p{margin:7px 0 0;color:#7d899d;font-size:12px}
-.heading-actions{grid-column:2;grid-row:1;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;min-width:0}
-.heading-actions button,.page-refresh{font-size:13px;min-height:38px}
-.page-refresh{grid-column:3;grid-row:1;justify-self:end}
+.heading-actions{display:flex;align-items:center;justify-content:flex-end;flex:0 0 auto;flex-wrap:nowrap;gap:8px;max-width:100%;margin-left:auto}
+.heading-actions button{flex:0 0 auto;font-size:13px;min-height:40px;padding:8px 13px}
 .panel{background:#fff;border:1px solid var(--line);border-radius:7px;min-width:0;overflow:hidden}
 .panel-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 22px 16px}
 .panel-heading h3{margin:0;font-size:14px}
@@ -455,12 +454,10 @@ input.has-suffix{padding-right:37px}
  .sidebar{transform:translateX(-100%);width:224px;transition:transform .18s}.sidebar.open{transform:translateX(0)}.nav-shade{position:fixed;inset:0;z-index:35;background:#17233b66}.main-area{margin:0;width:100%}.mobile-menu{display:inline-flex;margin-left:-5px}
  .topbar{padding:0 16px;height:56px;min-height:56px}.breadcrumb-row{gap:8px;font-size:12px}.breadcrumb-row>.muted,.breadcrumb-row>.app-icon{display:none}.breadcrumb-row strong{overflow:hidden;text-overflow:ellipsis}.topbar-meta{gap:0}.account-popover{right:-2px;width:min(260px,calc(100vw - 32px));padding:16px}
  .content{padding:22px 16px 28px}
- .page-heading{grid-template-columns:minmax(0,1fr) auto;gap:12px;margin-bottom:20px}
+ .page-heading{gap:14px 16px;margin-bottom:20px}
  .page-heading h1{font-size:22px;margin:0}
  .page-heading>div>p{font-size:11px;max-width:265px}
- .page-refresh{grid-column:2;min-height:38px;padding:8px 11px;font-size:12px}
- .heading-actions{grid-column:1/-1;grid-row:2;justify-content:flex-end;gap:8px}
- .heading-actions button{font-size:13px;min-height:40px;padding:8px 13px}
+ .heading-actions button{min-height:40px;padding:8px 12px}
  .overview-toolbar{gap:10px 16px;margin-bottom:16px}
  .stats-filter{gap:12px}
  .stats-filter input{width:100%;min-width:0}
