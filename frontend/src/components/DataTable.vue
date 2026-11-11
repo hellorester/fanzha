@@ -39,7 +39,7 @@ onBeforeUnmount(()=>clearTimeout(queryTimer))
     <label v-if="resource==='users'"><span>账号状态</span><select v-model="enabledFilter" aria-label="按账号状态筛选"><option value="">全部状态</option><option value="true">启用</option><option value="false">停用</option></select></label>
   </div>
  </div>
- <div class="table-scroll" :class="{'application-list':resource==='applications'}">
+ <div class="table-scroll" :class="{'application-list':resource==='applications','record-list':resource!=='applications'}">
   <table><thead><tr><th v-for="c in columns" :key="c.key" scope="col">{{c.label}}</th><th v-if="selectable" class="align-right" scope="col">操作</th></tr></thead>
    <tbody><tr v-for="r in visible" :key="r.id||r.code"><td v-for="c in columns" :key="c.key" :data-label="c.label" :class="{'mono':c.key==='code','wide-cell':c.wide}"><span v-if="c.badge" class="badge" :class="statusTone(String(c.format?c.format(r[c.key],r):r[c.key]||''))">{{c.format?c.format(r[c.key],r):fmt(r[c.key])}}{{c.key==='level'?'风险':''}}</span><span v-else>{{c.format?c.format(r[c.key],r):fmt(r[c.key])}}</span></td><td v-if="selectable" class="align-right" data-label="操作"><button class="text-button row-action" @click="emit('select',r)">{{actionLabel}}<AppIcon name="chevron" :size="14"/></button></td></tr></tbody>
   </table>
