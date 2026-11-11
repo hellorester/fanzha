@@ -85,6 +85,15 @@ def advanced():
  for who,resource in [(center,'reports'),(center,'alerts'),(pay,'commands'),(grid,'visits'),(public,'applications')]:
   v=who.call('/list/'+resource+'?page=1&size=2');require(len(v['items'])<=2 and v['total']>=len(v['items']),'后端分页 '+who.name+' '+resource)
  reviewer.call('/users',expected=403);public.call('/list/logs',expected=403);grid3.call('/list/visits?q=not-exist')
+ account_meta=center.call('/meta');person=account_meta['victims'][0]
+ require('community_name' in person and 'identity' in person and 'identity_enc' not in person,'账号关联候选展示社区与脱敏证件信息')
+ account_tag=uuid.uuid4().hex[:8]
+ def invalid_account(name,role,**extra):
+  body={'username':'invalid-'+name+'-'+account_tag,'displayName':'无效账号边界','password':'Demo2026!','role':role,'enabled':True};body.update(extra);return body
+ center.call('/users',invalid_account('payment','PAYMENT'),expected=400)
+ center.call('/users',invalid_account('grid','GRID'),expected=400)
+ center.call('/users',invalid_account('public','PUBLIC',verified=True),expected=400)
+ center.call('/users',invalid_account('center','CENTER',orgId=1),expected=400)
  before=center.call('/configs')[0];bad=dict(before['data']);bad['weights']=[1,2,3,4,5];center.call('/configs',bad,expected=400)
  require(center.call('/configs')[0]['id']==before['id'],'无效配置不污染有效版本')
  config=dict(before['data']);config['weights']=[20,20,20,20,20];center.call('/configs',config)

@@ -69,12 +69,12 @@ java -jar .\backend\target\antifraud-1.0.0.jar
 ```powershell
 npm.cmd --prefix frontend ci
 npm.cmd --prefix frontend run build
-.\backend\mvnw.cmd -B -f backend\pom.xml clean package
+mvn -B -f backend\pom.xml clean package
 ```
 
 Maven会直接将`frontend/dist`打入运行包，不需要复制前端文件或执行辅助脚本。构建不需要数据库密码，默认执行Java单元测试；依赖已缓存时可在Maven命令中加`-o`。完成后使用本文开头的`java -jar`命令启动。
 
-`backend/mvnw.cmd`是Maven官方构建工具，仅构建源码时使用，日常启动不需要它。已安装Maven时也可直接执行`mvn -B -f backend/pom.xml clean package`。
+Maven仅用于构建源码，日常启动不需要额外脚本；未配置到`PATH`时，直接使用本机Maven的`mvn.cmd`完整路径执行同一命令。
 
 ## 已做的检查
 
@@ -82,7 +82,7 @@ Maven会直接将`frontend/dist`打入运行包，不需要复制前端文件或
 
 `.github/workflows/ci.yml` 在向 `main` 推送和提交 PR 时执行前端测试及构建、后端测试及完整打包、MySQL 实际接口回归和旧数据迁移检查，测试报告保留7天。CI仅使用临时数据库与自动生成的密钥，不读取任何开发者的本机配置。
 
-本机前端测试执行`npm.cmd --prefix frontend test`；后端测试执行`.\backend\mvnw.cmd -B -f backend\pom.xml test`。接口测试通过 `TEST_BASE_URL` 指定测试实例；SQL边界测试还需 `TEST_DB_NAME`、数据库连接及 `APP_KEY`，仅允许独立的 `antifraud_*verify` 或 `antifraud_*ci` 验证库。`functional_regressions.py`还需要 `APP_LOG` 指向该实例的应用日志，用于核验研判失败时记录了原始异常。综合测试会生成业务数据，不应对日常业务库执行。
+本机前端测试执行`npm.cmd --prefix frontend test`；后端测试执行`mvn -B -f backend\pom.xml test`。接口测试通过 `TEST_BASE_URL` 指定测试实例；SQL边界测试还需 `TEST_DB_NAME`、数据库连接及 `APP_KEY`，仅允许独立的 `antifraud_*verify` 或 `antifraud_*ci` 验证库。`functional_regressions.py`还需要 `APP_LOG` 指向该实例的应用日志，用于核验研判失败时记录了原始异常。综合测试会生成业务数据，不应对日常业务库执行。
 
 此前还完成过四角色29个页面入口、10万条虚构数据及20个独立账号的容量检查、数据库及附件恢复和本机启停验证。这些历史容量结果不代表每次改动都重新跑过压力测试。本机结果保存在 `tests/results`，运行记录不上传Git仓库。
 

@@ -12,6 +12,7 @@ import {createDetailLoader} from './detail-loader'
 import {dispatchTargets} from './dispatch-targets'
 import {articleArt} from './article-art'
 import {articleCategories,articleCategory} from './article-categories'
+import {normalizeUserData,personOptions,resetUserRole,resetVerification,userSummary,verificationOptions} from './user-form'
 const page=ref(location.hash.slice(1)||'dashboard'),busy=ref(false),error=ref(''),toast=ref(''),rows=ref([]),stats=ref({metrics:[],daily:[],risks:[]}),meta=ref({}),modal=ref(null),detail=ref(null),mobile=ref(false),receiptResult=ref(null),loginBusy=ref(false)
 const visitAttention=ref([])
 const integrityPanel=ref(null)
@@ -174,7 +175,23 @@ function campaignForm(){form('派发社区宣防任务',[f('title','任务标题
 function checkinForm(c){form('宣传活动打卡',[f('form','宣传形式','select',{required:true,options:['入户宣传','集中讲座','现场咨询','线上宣传']}),f('time','活动时间','datetime-local',{required:true,min:c.created_at,max:c.due_at<localTime()?c.due_at:localTime()}),f('sessions','开展场次','number',{min:1,step:1,required:true}),f('people','触达人次','number',{min:0,step:1,required:true}),f('note','活动说明','textarea',{max:1000})],`/campaigns/${c.id}/checkin`,{time:localTime(),sessions:1,people:0,requestKey:crypto.randomUUID()})}
 function articleForm(a={}){const categories=[...new Set([...articleCategories,...(a.category?[articleCategory(a.category)]:[])])],cover=a.cover_id?[{id:a.cover_id,filename:a.cover_filename||'当前封面',mime:a.cover_mime,bytes:a.cover_bytes}]:[];form(a.id?'编辑知识文章':'新建知识文章',[f('title','标题','text',{required:true,wide:true}),f('category','分类','select',{required:true,options:categories}),f('state','发布状态','select',{required:true,options:['草稿','已发布','已下线']}),f('cover','封面图','file',{wide:true,image:true,maxFiles:1,accept:'.png,.jpg,.jpeg',fileHint:'PNG / JPG · 建议 16:9 · 不超过 10 MB',help:'未上传时使用对应分类的默认封面。',initialFiles:cover}),f('summary','摘要','textarea',{required:true,max:300,rows:3}),f('body','正文','textarea',{required:true,max:20000,rows:8})],'/articles'+(a.id?'/'+a.id:''),{state:'草稿',...a,category:articleCategory(a.category)})}
 function editBlacklist(a={}){form(a.id?'维护风险名单':'新增风险名单',[f('kind','类型','select',{options:['号码','账户','网址'],required:true}),f('value','匹配内容','text',{required:true}),f('source','来源依据','text',{required:true}),f('enabled','启用','checkbox')],'/blacklist'+(a.id?'/'+a.id:''),{kind:'号码',enabled:true,...a})}
-function editUser(a={}){form(a.id?'维护账号':'新增账号',[f('username','登录账号','text',{required:true}),f('displayName','显示名称','text',{required:true}),f('role','业务角色','select',{required:true,options:Object.entries(roleNames).map(([value,label])=>({value,label}))}),f('password',a.id?'新密码（不修改则留空）':'初始密码','password',{required:!a.id}),f('orgId','支付机构归属','select',{options:option(meta.value.orgs)}),f('communityId','网格社区归属','select',{options:option(meta.value.communities)}),f('victimId','已核验实名人员关联','select',{options:option(meta.value.victims)}),f('verified','身份资料已关联','checkbox'),f('enabled','启用账号','checkbox'),f('admin','中心管理权限','checkbox')],'/users'+(a.id?'/'+a.id:''),{username:a.username||'',displayName:a.display_name||'',role:a.role||'PUBLIC',enabled:a.enabled??true,verified:a.role==='PUBLIC'&&a.verified,admin:a.admin||false,orgId:a.org_id||'',communityId:a.community_id||'',victimId:a.victim_id||''})}
+function editUser(a={}){
+ const people=personOptions(meta.value.victims,businessName)
+ const initial={username:a.username||'',displayName:a.display_name||'',role:a.role||'PUBLIC',password:'',enabled:a.enabled??true,verification:a.role==='PUBLIC'&&a.verified?'VERIFIED':'UNVERIFIED',admin:a.role==='CENTER'&&Boolean(a.admin),orgId:a.org_id||'',communityId:a.community_id||'',victimId:a.victim_id||''}
+ const goPeople=()=>{modal.value=null;go('people')}
+ form(a.id?'维护账号':'新增账号',[
+  f('username','登录账号','text',{section:'基本信息',required:true,maxlength:60,placeholder:'例如 public4'}),
+  f('displayName','显示名称','text',{required:true,maxlength:80}),
+  f('role','业务角色','select',{required:true,options:Object.entries(roleNames).map(([value,label])=>({value,label})),change:resetUserRole}),
+  f('password',a.id?'新密码（不修改则留空）':'初始密码','password',{required:!a.id,minlength:8,maxlength:100,help:'8—100位'}),
+  f('verification','实名核验状态','select',{section:'角色信息',required:true,options:verificationOptions,when:data=>data.role==='PUBLIC',change:resetVerification}),
+  f('victimId','关联实名人员','select',{required:true,wide:true,options:people,when:data=>data.role==='PUBLIC'&&data.verification==='VERIFIED',help:'关联后，该账号将按此身份查看本人账户并提交相关申请。',actionLabel:'先登记人员',action:goPeople}),
+  f('orgId','所属支付机构','select',{section:'角色信息',required:true,options:option(meta.value.orgs),when:data=>data.role==='PAYMENT'}),
+  f('communityId','所属社区','select',{section:'角色信息',required:true,options:option(meta.value.communities),when:data=>data.role==='GRID'}),
+  f('admin','中心管理权限','checkbox',{section:'角色信息',wide:true,when:data=>data.role==='CENTER',help:'管理员可维护账号、实名资料和系统配置；不勾选为研判人员。'}),
+  f('enabled','启用账号','checkbox',{section:'账号状态',wide:true})
+ ],'/users'+(a.id?'/'+a.id:''),initial,'',normalizeUserData,data=>userSummary(data,meta.value,roleNames,businessName))
+}
 function configForm(){const c=meta.value.config||{};form('发布新规则版本',[...['金额','时段','异地','黑名单','异常行为'].map((label,i)=>f('w'+i,label+'权重','number',{min:1,max:100,step:1,required:true,unit:'%',section:i===0?'评分权重':undefined})),...Object.entries({medium:'中风险阈值',high:'高风险阈值',mergeHours:'归并窗口（小时）',freezeHours:'冻结时限（小时）',extensionHours:'每次延期（小时）',maxExtensions:'延期次数上限',timeoutMinutes:'机构超时（分钟）'}).map(([key,label])=>f(key,label,'number',{min:0,step:1,required:true,section:key==='medium'?'风险阈值':key==='mergeHours'?'时效设置':undefined}))],'/configs',{...c,...Object.fromEntries((c.weights||[]).map((v,i)=>['w'+i,v]))},'权重合计须为100；已生效指令不受新版本影响。',data=>({...data,weights:[0,1,2,3,4].map(i=>Number(data['w'+i]))}))}
 function correctionForm(c){form('申请回执更正',[f('result','更正后的结果','select',{required:true,options:['全额执行','部分执行','拒绝执行']}),f('amount','更正后实际金额','number',{min:0,step:.01,required:true}),f('reason','更正原因','textarea',{required:true,max:1000})],`/commands/${c.id}/correction`,{amount:c.actual},'原回执保留；已有后续业务时不可直接更正。')}
 const canCreate=computed(()=>({reports:role.value==='PUBLIC'||isCenter.value,campaigns:isCenter.value,articles:isCenter.value,users:isAdmin.value,blacklist:isAdmin.value,configs:isAdmin.value,people:isAdmin.value,banks:isAdmin.value}[page.value]))

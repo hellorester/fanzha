@@ -264,6 +264,8 @@ td.mono{font-size:12px;color:#526484}
 .input-suffix{position:absolute;right:12px;pointer-events:none;color:#9aa7ba;font-size:12px}
 input.has-suffix{padding-right:37px}
 .field-help{color:#66758a;font-size:12px;line-height:1.6}
+.field-support{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.field-support .text-button{min-height:0;padding:0;font-size:12px;white-space:nowrap}
 .modal-backdrop,.drawer-backdrop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#16233b66;padding:24px;z-index:100;overscroll-behavior:contain}
 .dialog{background:#fff;border:1px solid #e2e6ee;border-radius:9px;width:680px;max-width:100%;max-height:calc(100dvh - 48px);box-shadow:0 20px 70px #15203926;overflow:auto}
 .form-dialog{display:flex;flex-direction:column;overflow:hidden}
