@@ -1,7 +1,11 @@
 """Runs real HTTP workflows against the local course prototype; uses virtual data only."""
-import urllib.request,urllib.error,http.cookiejar,json,uuid,datetime,time,pathlib,sys,os,base64
+import urllib.request,urllib.error,urllib.parse,http.cookiejar,json,uuid,datetime,time,pathlib,sys,os,base64
 sys.stdout.reconfigure(encoding='utf-8')
-BASE=os.environ.get('TEST_BASE_URL','http://127.0.0.1:8088/api')
+BASE=os.environ.get('TEST_BASE_URL','').rstrip('/')
+if not BASE:
+ raise RuntimeError('接口回归测试必须显式设置 TEST_BASE_URL，并指向独立测试实例（建议 http://127.0.0.1:8089/api）')
+if urllib.parse.urlparse(BASE).port==8088 and os.environ.get('ALLOW_DAILY_DB_TESTS','').lower() not in {'1','true'}:
+ raise RuntimeError('拒绝对日常 8088 实例运行写入型回归测试；确需执行时须显式设置 ALLOW_DAILY_DB_TESTS=true')
 results=[]
 class Client:
  def __init__(self,name=None):

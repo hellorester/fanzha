@@ -34,7 +34,7 @@ public class Relationships {
         if(str(app,"kind").equals("返还"))payee(num(app,"payee_bank_id"),person,num(original,"bank_id"));
     }
     public List<Map<String,Object>> people(User u){
-        u.roles("CENTER");return s.rows("SELECT p.*,c.name community_name FROM af_victim p LEFT JOIN af_community c ON c.id=p.community_id ORDER BY p.id").stream().peek(p->{p.put("name",s.decrypt(p.remove("name_enc")));p.put("phone",mask(s.decrypt(p.remove("phone_enc"))));p.put("identity",mask(s.decrypt(p.remove("identity_enc"))));}).toList();
+        u.administrator();return s.rows("SELECT p.*,c.name community_name FROM af_victim p LEFT JOIN af_community c ON c.id=p.community_id ORDER BY p.id").stream().peek(p->{p.put("name",s.decrypt(p.remove("name_enc")));p.put("phone",mask(s.decrypt(p.remove("phone_enc"))));p.put("identity",mask(s.decrypt(p.remove("identity_enc"))));}).toList();
     }
     @Transactional(isolation=Isolation.READ_COMMITTED)
     public long person(User u,Map<String,Object> b){

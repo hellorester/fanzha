@@ -14,6 +14,8 @@ props.fields.forEach(f=>{
 })
 const summaryItems=computed(()=>props.summary?.(data)||[])
 const visibleFields=computed(()=>props.fields.filter(field=>!field.when||field.when(data)))
+const isRequired=field=>typeof field.required==='function'?field.required(data):Boolean(field.required)
+const fieldValue=(field,key)=>typeof field[key]==='function'?field[key](data):field[key]
 const groups=computed(()=>{
  const result=[]
  for(const field of visibleFields.value){
@@ -63,7 +65,7 @@ async function removeFile(field,index){
 async function send(){
  error.value='';busy.value=true
  try{
-  const missing=visibleFields.value.find(f=>f.type==='file'&&f.required&&!data[f.key]?.length)
+   const missing=visibleFields.value.find(f=>f.type==='file'&&isRequired(f)&&!data[f.key]?.length)
   if(missing)throw Error('请上传'+missing.label)
   const result=await props.submit({...data});draft.commit();emit('done',result)
  }catch(e){error.value=e.message;if(e.status===409)emit('conflict')}finally{busy.value=false}
@@ -83,18 +85,18 @@ async function send(){
        <template v-for="item in group.items" :key="item.key">
         <div v-if="item.type==='checks'" class="check-group full">
          <label v-for="field in item.fields" :key="field.key" class="check-option" :class="{'check-option-wide':field.wide||field.help}">
-          <input type="checkbox" v-model="data[field.key]" :disabled="busy" @change="field.change?.(data)"><span><span class="check-label">{{field.label}}</span><small v-if="field.help">{{field.help}}</small></span>
+           <input type="checkbox" v-model="data[field.key]" :disabled="busy||field.disabled" @change="field.change?.(data)"><span><span class="check-label">{{field.label}}</span><small v-if="field.help">{{field.help}}</small></span>
          </label>
         </div>
         <div v-else class="field" :class="{full:item.field.wide||['textarea','file'].includes(item.field.type)}">
-         <label :for="formId+'-'+item.key">{{item.field.label}}<span v-if="item.field.required" class="required-mark" aria-hidden="true">*</span><span v-if="item.field.optional" class="optional-mark">选填</span></label>
-         <textarea v-if="item.field.type==='textarea'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="item.field.required" :maxlength="item.field.max||2000" :rows="item.field.rows||3" :placeholder="item.field.placeholder" :disabled="busy"></textarea>
-         <select v-else-if="item.field.type==='select'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="item.field.required" :disabled="busy" @change="item.field.change?.(data)"><option value="" :disabled="item.field.required">{{item.field.required?'请选择':'请选择（可不选）'}}</option><option v-for="o in item.field.options" :key="o.value??o" :value="o.value??o" :disabled="o.disabled">{{o.label??o}}</option></select>
+          <label :for="formId+'-'+item.key">{{item.field.label}}<span v-if="isRequired(item.field)" class="required-mark" aria-hidden="true">*</span><span v-if="item.field.optional" class="optional-mark">选填</span></label>
+           <textarea v-if="item.field.type==='textarea'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="isRequired(item.field)" :maxlength="item.field.max||2000" :rows="item.field.rows||3" :placeholder="item.field.placeholder" :disabled="busy||item.field.disabled"></textarea>
+           <select v-else-if="item.field.type==='select'" :id="formId+'-'+item.key" v-model="data[item.key]" :required="isRequired(item.field)" :disabled="busy||item.field.disabled" @change="item.field.change?.(data)"><option value="" :disabled="isRequired(item.field)">{{isRequired(item.field)?'请选择':'请选择（可不选）'}}</option><option v-for="o in item.field.options" :key="o.value??o" :value="o.value??o" :disabled="o.disabled">{{o.label??o}}</option></select>
          <template v-else-if="item.field.type==='file'">
-          <label class="upload-control" :class="{disabled:busy}"><input :id="formId+'-'+item.key" type="file" :multiple="(item.field.maxFiles||10)>1" :accept="item.field.accept||'.png,.jpg,.jpeg,.pdf,.docx,.txt'" :disabled="busy" @change="upload($event,item.field)"><span class="upload-button"><AppIcon name="upload" :size="16"/>{{busy?'正在处理…':uploads[item.key]?.length&&item.field.maxFiles===1?'更换图片':'选择文件'}}</span><span class="upload-hint">{{item.field.fileHint||'PNG / JPG / PDF / DOCX / TXT · 单个不超过 10 MB'}}</span></label>
+           <label class="upload-control" :class="{disabled:busy||item.field.disabled}"><input :id="formId+'-'+item.key" type="file" :multiple="(item.field.maxFiles||10)>1" :accept="item.field.accept||'.png,.jpg,.jpeg,.pdf,.docx,.txt'" :disabled="busy||item.field.disabled" @change="upload($event,item.field)"><span class="upload-button"><AppIcon name="upload" :size="16"/>{{busy?'正在处理…':uploads[item.key]?.length&&item.field.maxFiles===1?'更换图片':'选择文件'}}</span><span class="upload-hint">{{item.field.fileHint||'PNG / JPG / PDF / DOCX / TXT · 单个不超过 10 MB'}}</span></label>
           <div v-for="(file,i) in uploads[item.key]||[]" :key="file.id" class="upload-item" :class="{'image-upload-item':item.field.image}"><img v-if="item.field.image" :src="'/api/attachments/'+file.id" :alt="'封面预览：'+file.filename"><AppIcon v-else name="file" :size="16"/><span>{{file.filename}}</span><button type="button" class="icon-button" :aria-label="'移除 '+file.filename" :disabled="busy" @click="removeFile(item.field,i)"><AppIcon name="close" :size="16"/></button></div>
          </template>
-         <div v-else class="input-wrap"><input :id="formId+'-'+item.key" v-model="data[item.key]" :type="item.field.type||'text'" :required="item.field.required" :step="item.field.step||'any'" :min="item.field.min" :max="item.field.max" :minlength="item.field.minlength" :maxlength="item.field.maxlength||500" :placeholder="item.field.placeholder" :autocomplete="item.field.type==='password'?'new-password':'off'" :disabled="busy" :class="{'has-suffix':item.field.unit}"><span v-if="item.field.unit" class="input-suffix">{{item.field.unit}}</span></div>
+          <div v-else class="input-wrap"><input :id="formId+'-'+item.key" v-model="data[item.key]" :type="item.field.type||'text'" :required="isRequired(item.field)" :step="item.field.step||'any'" :min="fieldValue(item.field,'min')" :max="fieldValue(item.field,'max')" :minlength="item.field.minlength" :maxlength="item.field.maxlength||500" :placeholder="item.field.placeholder" :autocomplete="item.field.type==='password'?'new-password':'off'" :disabled="busy||item.field.disabled" :class="{'has-suffix':item.field.unit}"><span v-if="item.field.unit" class="input-suffix">{{item.field.unit}}</span></div>
          <div v-if="item.field.help||item.field.actionLabel" class="field-support"><small v-if="item.field.help" class="field-help">{{item.field.help}}</small><button v-if="item.field.actionLabel" type="button" class="text-button" :disabled="busy" @click="item.field.action?.(data)">{{item.field.actionLabel}}</button></div>
         </div>
        </template>

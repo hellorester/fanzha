@@ -156,10 +156,14 @@ public class Migrations implements CommandLineRunner {
         }
     }
     private void foreignKey(String table,String name,String column,String parent){
-        if(s.count("SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME=?",table,name)==0)s.db.execute("ALTER TABLE "+table+" ADD CONSTRAINT "+name+" FOREIGN KEY ("+column+") REFERENCES "+parent+"(id)");
+        var current=s.rows("SELECT COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME=? ORDER BY ORDINAL_POSITION",table,name);
+        if(current.isEmpty())s.db.execute("ALTER TABLE "+table+" ADD CONSTRAINT "+name+" FOREIGN KEY ("+column+") REFERENCES "+parent+"(id)");
+        else require(current.size()==1&&str(current.getFirst(),"COLUMN_NAME").equals(column)&&str(current.getFirst(),"REFERENCED_TABLE_NAME").equals(parent)&&str(current.getFirst(),"REFERENCED_COLUMN_NAME").equals("id"),"外键 "+name+" 与预期结构不符，升级已停止");
     }
     private void column(String table,String name,String type){
-        if(s.count("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?",table,name)==0)s.db.execute("ALTER TABLE "+table+" ADD COLUMN "+name+" "+type);
+        var current=s.rows("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?",table,name);
+        if(current.isEmpty())s.db.execute("ALTER TABLE "+table+" ADD COLUMN "+name+" "+type);
+        else require(current.size()==1&&str(current.getFirst(),"COLUMN_TYPE").replace(" ","").equalsIgnoreCase(type.replace(" ","")),"字段 "+table+"."+name+" 与预期类型不符，升级已停止");
     }
     private boolean applied(int version){return s.count("SELECT COUNT(*) FROM af_migration WHERE version=?",version)>0;}
     private void mark(int version){s.db.update("INSERT INTO af_migration(version,applied_at) VALUES(?,?)",version,s.now());}

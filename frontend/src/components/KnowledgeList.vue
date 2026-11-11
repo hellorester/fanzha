@@ -8,11 +8,11 @@ defineEmits(['select'])
 </script>
 <template>
  <div class="knowledge-list" :class="{'knowledge-list-compact':compact}">
-  <article v-for="a in articles" :key="a.id" class="knowledge-row">
-   <button class="knowledge-cover" :aria-label="'阅读 '+a.title" @click="$emit('select',a)"><img :src="articleArt(a)" alt="" loading="lazy"/></button>
-   <div class="knowledge-copy"><div class="knowledge-meta"><span>{{articleCategory(a.category)}}</span><span v-if="manage" class="badge" :class="statusTone(a.state)">{{a.state}}</span></div><h3><button @click="$emit('select',a)">{{a.title}}</button></h3><p>{{a.summary}}</p><time v-if="a.updated_at" :datetime="a.updated_at">{{fmt(a.updated_at).slice(0,10)}}</time></div>
-   <button class="icon-button knowledge-arrow" :aria-label="'查看 '+a.title" @click="$emit('select',a)"><AppIcon name="chevron" :size="19"/></button>
-  </article>
+  <button v-for="a in articles" :key="a.id" type="button" class="knowledge-row" :aria-label="'阅读 '+a.title" @click="$emit('select',a)">
+   <span class="knowledge-cover"><img :src="articleArt(a)" alt="" loading="lazy"/></span>
+   <span class="knowledge-copy"><span class="knowledge-meta"><span>{{articleCategory(a.category)}}</span><span v-if="manage" class="badge" :class="statusTone(a.state)">{{a.state}}</span></span><span class="knowledge-title">{{a.title}}</span><span class="knowledge-summary">{{a.summary}}</span><time v-if="a.updated_at" :datetime="a.updated_at">{{fmt(a.updated_at).slice(0,10)}}</time></span>
+   <span class="knowledge-arrow" aria-hidden="true"><AppIcon name="chevron" :size="19"/></span>
+  </button>
   <p v-if="!articles.length" class="knowledge-empty">暂无文章</p>
  </div>
 </template>
