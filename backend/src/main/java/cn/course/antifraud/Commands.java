@@ -11,7 +11,17 @@ import static cn.course.antifraud.Support.*;
 public class Commands {
     private final Support s;private final Clues clues;private final Files files;private final Relationships relationships;
     public Commands(Support s,Clues clues,Files files,Relationships relationships){this.s=s;this.clues=clues;this.files=files;this.relationships=relationships;}
-    public void access(User u,Map<String,Object> c){u.roles("CENTER","PAYMENT","PUBLIC");if(u.role().equals("PAYMENT")&&num(c,"org_id")!=u.orgId()||u.role().equals("PUBLIC")&&(!u.verified()||u.victimId()==0||!(Set.of("止付","返还").contains(str(c,"kind"))&&num(c,"victim_id")==u.victimId()||Set.of("止付","解除").contains(str(c,"kind"))&&relationships.holder(c)==u.victimId())))throw new Problem(404,"指令不存在或无权访问");}
+    private boolean canView(User u,Map<String,Object> c){
+        return switch(u.role()){
+            case "CENTER"->true;
+            case "PAYMENT"->num(c,"org_id")==u.orgId();
+            case "PUBLIC"->u.verified()&&u.victimId()>0&&(
+                Set.of("止付","返还").contains(str(c,"kind"))&&num(c,"victim_id")==u.victimId()
+                ||Set.of("止付","解除").contains(str(c,"kind"))&&relationships.holder(c)==u.victimId());
+            default->false;
+        };
+    }
+    public void access(User u,Map<String,Object> c){u.roles("CENTER","PAYMENT","PUBLIC");if(!canView(u,c))throw new Problem(404,"指令不存在或无权访问");}
     public List<Map<String,Object>> list(User u){u.roles("CENTER","PAYMENT","PUBLIC");String scope=u.role().equals("PAYMENT")?" WHERE c.org_id=?":u.role().equals("PUBLIC")?" WHERE "+Relationships.commandScope(u):"";Object[] params=u.role().equals("PAYMENT")?new Object[]{u.orgId()}:new Object[]{};return s.rows("SELECT c.*,o.name org_name,b.number_enc FROM af_command c JOIN af_org o ON o.id=c.org_id JOIN af_bank b ON b.id=c.bank_id"+scope+" ORDER BY c.id DESC LIMIT 300",params).stream().peek(c->{c.put("account",mask(s.decrypt(c.remove("number_enc"))));applicationEligibility(u,c);hidePublicInternals(u,c);}).toList();}
     public Map<String,Object> detail(User u,long id){var c=s.one("SELECT * FROM af_command WHERE id=?",id);access(u,c);var alert=s.one("SELECT * FROM af_alert WHERE id=?",c.get("alert_id"));c.put("alert_state",alert.get("state"));capabilities(c,alert);applicationEligibility(u,c);if(u.role().equals("CENTER")){c.put("alert_needs_review",alert.get("needs_review"));c.put("freeze_review_ready",clues.freezeReviewReady(alert));c.put("target_verified",s.count("SELECT COUNT(*) FROM af_alert_bank WHERE alert_id=? AND bank_id=?",c.get("alert_id"),c.get("bank_id"))>0);}var bank=s.one("SELECT * FROM af_bank WHERE id=?",c.get("bank_id"));c.put("bank",map("id",bank.get("id"),"account",mask(s.decrypt(bank.get("number_enc"))),"holder",u.role().equals("PUBLIC")&&u.victimId()!=relationships.holder(c)?"***":s.decrypt(bank.get("holder_enc")),"available",u.role().equals("PUBLIC")?null:bank.get("available")));c.put("receipts",s.rows("SELECT r.*,u.display_name FROM af_receipt r JOIN af_user u ON u.id=r.actor_id WHERE command_id=? ORDER BY version DESC",id).stream().peek(r->r.put("attachments",u.role().equals("PUBLIC")?List.of():files.list("receipt",num(r,"id")))).toList());c.put("timeline",s.rows("SELECT action,old_state,new_state,note,created_at FROM af_log WHERE entity_type='command' AND entity_id=? ORDER BY id",id));if(!u.role().equals("PUBLIC")){c.put("reportMaterials",s.rows("SELECT a.id,a.filename,a.mime FROM af_attachment a JOIN af_report r ON a.entity_type='report' AND a.entity_id=r.id WHERE r.alert_id=?",c.get("alert_id")));if(num(c,"application_id")>0){var app=s.one("SELECT id,code,kind,reason,note,amount,approved,payee_enc,applicant_person_id FROM af_application WHERE id=?",c.get("application_id"));applicationIdentity(app);app.put("attachments",files.list("application",num(app,"id")));c.put("application",app);}}if(u.role().equals("PUBLIC")){hidePublicInternals(u,c);for(var row:(List<Map<String,Object>>)c.get("timeline"))row.remove("note");for(var row:(List<Map<String,Object>>)c.get("receipts")){row.remove("reason");row.remove("voucher");row.remove("actor_id");row.remove("display_name");}}return c;}
     public void applicationEligibility(User u,Map<String,Object> c){
@@ -142,7 +152,10 @@ public class Commands {
         var original=s.one("SELECT kind,state,expires_at,remaining,reserved FROM af_command WHERE id=?",a.get("original_id"));
         a.put("originalFunds",map("remaining",original.get("remaining"),"reserved",original.get("reserved"),"available",amount(original,"remaining").subtract(amount(original,"reserved"))));
         applicationIdentity(a);a.put("attachments",files.list("application",id));
-        var children=s.rows("SELECT id,code,kind,state,requested,actual FROM af_command WHERE application_id=? ORDER BY id",id);a.put("commands",children);
+        var children=s.rows("SELECT id,code,kind,state,requested,actual,bank_id,org_id,victim_id FROM af_command WHERE application_id=? ORDER BY id",id);
+        // Historical applications remain readable by their submitter; links use current command permissions.
+        for(var child:children){child.put("detail_available",canView(u,child));child.remove("bank_id");child.remove("org_id");child.remove("victim_id");}
+        a.put("commands",children);
         if(str(a,"kind").equals("返还"))a.put("fundsProgress",RefundProgress.describe(a,original,children,s.now()));
         a.put("timeline",s.rows("SELECT action,old_state,new_state,note,created_at FROM af_log WHERE entity_type='application' AND entity_id=? ORDER BY id",id));return a;
     }

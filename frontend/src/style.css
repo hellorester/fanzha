@@ -370,6 +370,10 @@ input.has-suffix{padding-right:37px}
 .linked-record{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;text-align:left;font-size:13px;margin:8px 0;padding:13px 15px;white-space:normal}
 .linked-record>span:first-child{flex:1;min-width:0;overflow-wrap:anywhere}
 .linked-record>.app-icon{color:#a1b0c7}
+.readonly-record{border:1px solid var(--line);border-radius:5px}
+.readonly-record small{display:block;margin-top:5px;color:var(--muted);font-size:12px}
+.detail-error{margin-top:0;align-items:center;justify-content:space-between}
+.detail-error .text-button{flex-shrink:0;color:inherit}
 .timeline{list-style:none;margin:0;padding:0 0 0 5px}
 .timeline li{position:relative;padding:0 0 24px 22px;border-left:1px solid #e0e7f2}
 .timeline li:last-child{border-left-color:transparent}
