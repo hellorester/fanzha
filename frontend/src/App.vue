@@ -2,7 +2,7 @@
 import {ref,computed,onMounted,onBeforeUnmount,watch,nextTick} from 'vue'
 import {api,boot,session,fmt,money,localTime,roleNames,statusTone,businessName} from './api'
 import DataTable from './components/DataTable.vue'
-import IntegrityPanel from './components/IntegrityPanel.vue'
+import IntegrityDialog from './components/IntegrityDialog.vue'
 import AppIcon from './components/AppIcon.vue'
 import FormDialog from './components/FormDialog.vue'
 import PublicPortal from './components/PublicPortal.vue'
@@ -18,7 +18,7 @@ import {normalizeUserData,personOptions,resetUserRole,resetVerification,userSumm
 import {configFieldLimits,executionAmountMax,executionReasonRequired,reviewAmountRequired,reviewDecision,reviewDecisions,syncExecutionResult,syncReviewDecision,syncVisitResult,validateConfigForm} from './form-rules'
 const page=ref(location.hash.slice(1)||'dashboard'),busy=ref(false),error=ref(''),toast=ref(''),rows=ref([]),stats=ref({metrics:[],daily:[],risks:[]}),meta=ref({}),modal=ref(null),detail=ref(null),mobile=ref(false),receiptResult=ref(null),loginBusy=ref(false)
 const visitAttention=ref([])
-const integrityPanel=ref(null),auditPanel=ref(null)
+const inspection=ref(null)
 const sidebar=ref(null),mobileMenuButton=ref(null),receiptDialog=ref(null),pendingAction=ref('')
 const username=ref(''),password=ref(''),from=ref(''),to=ref(''),queryCode=ref(''),queryToken=ref(''),queryResult=ref(null)
 const loginOpen=ref(false),loginTarget=ref('dashboard'),loginRole=ref('PUBLIC'),loginError=ref(''),queryBusy=ref(false),logoutBusy=ref(false)
@@ -82,7 +82,7 @@ function routeChanged(){const next=location.hash.slice(1)||'dashboard';if(page.v
 let toastTimer
 function notify(text){clearTimeout(toastTimer);toast.value=text;toastTimer=setTimeout(()=>toast.value='',5000)}
 let refreshSequence=0
-function clearView(){refreshSequence++;rows.value=[];visitAttention.value=[];stats.value={metrics:[],daily:[],risks:[]};meta.value={};pagination.value=null;pendingAction.value='';closeDetail();modal.value=null;receiptResult.value=null;clearQueryState();error.value=''}
+function clearView(){refreshSequence++;rows.value=[];visitAttention.value=[];stats.value={metrics:[],daily:[],risks:[]};meta.value={};pagination.value=null;pendingAction.value='';closeDetail();modal.value=null;inspection.value=null;receiptResult.value=null;clearQueryState();error.value=''}
 async function refresh(){
  if(!session.ready)return;
  if(!user.value){
@@ -126,7 +126,8 @@ function demo(name){username.value=name;password.value='Demo2026!'}
 async function query(){error.value='';queryResult.value=null;queryBusy.value=true;try{queryResult.value=await api('/anonymous/query',{code:queryCode.value,token:queryToken.value})}catch(e){error.value=e.message}finally{queryBusy.value=false}}
 watch([queryCode,queryToken],()=>{queryResult.value=null;if(page.value==='lookup')error.value=''})
 watch(()=>user.value?.id,(current,previous)=>{closeAccountMenu();closeDetail();if(previous&&!current){modal.value=null;receiptResult.value=null;pendingAction.value='';password.value='';clearQueryState()}},{flush:'sync'})
-watch([detail,modal,receiptResult,loginOpen,mobile],()=>{document.body.classList.toggle('overlay-open',!!(detail.value||modal.value||receiptResult.value||loginOpen.value||mobile.value))})
+watch([page,()=>user.value?.id],()=>{inspection.value=null})
+watch([detail,modal,receiptResult,loginOpen,mobile,inspection],()=>{document.body.classList.toggle('overlay-open',!!(detail.value||modal.value||receiptResult.value||loginOpen.value||mobile.value||inspection.value))})
 watch(detail,async(value,previous)=>{if(value&&(value.id!==previous?.id||value.type!==previous?.type)){await nextTick();document.querySelector('.drawer-body')?.scrollTo({top:0});document.querySelector('.detail-drawer')?.focus({preventScroll:true})}})
 function detailKeys(event){if(!detail.value||modal.value||receiptResult.value||loginOpen.value)return;if(event.key==='Escape'){closeDetail();return}if(event.key==='Tab'){const items=[...document.querySelectorAll('.detail-drawer button:not(:disabled),.detail-drawer a,.detail-drawer input,.detail-drawer select,.detail-drawer textarea')].filter(x=>x.offsetParent!==null);const first=items[0],last=items.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}
 let receiptPrevious,receiptFocusVersion=0
@@ -232,8 +233,8 @@ const detailPairs=computed(()=>{const fields={code:'业务编号',kind:'业务�
 
 <template>
  <div v-if="!session.ready" class="initial-loading">正在连接反诈协同处置平台…</div>
- <PublicPortal v-else-if="!user" :paused="!!(detail||modal||receiptResult||loginOpen)" :page="page" :articles="rows" :busy="busy" :error="error" :query-result="queryResult" :query-busy="queryBusy" v-model:code="queryCode" v-model:token="queryToken" @navigate="go" @report="reportForm" @login="openLogin" @article="openDetail('articles',$event)" @query="query" @refresh="refresh"/>
-  <div v-else class="workspace">
+ <PublicPortal v-else-if="!user" :inert="!!(detail||modal||receiptResult||loginOpen)||undefined" :paused="!!(detail||modal||receiptResult||loginOpen)" :page="page" :articles="rows" :busy="busy" :error="error" :query-result="queryResult" :query-busy="queryBusy" v-model:code="queryCode" v-model:token="queryToken" @navigate="go" @report="reportForm" @login="openLogin" @article="openDetail('articles',$event)" @query="query" @refresh="refresh"/>
+  <div v-else class="workspace" :inert="!!(detail||modal||receiptResult||loginOpen||inspection)||undefined">
    <aside id="workspace-navigation" ref="sidebar" :class="['sidebar',{open:mobile}]" @keydown="mobileKeys">
    <a href="#dashboard" class="brand"><span class="brand-symbol"><AppIcon name="shield" :size="24"/></span><span>反诈协同<small>业务处置工作台</small></span></a>
    <div class="workspace-tag"><span class="status-dot"></span>{{roleNames[role]||'公共服务'}}</div>
@@ -246,8 +247,8 @@ const detailPairs=computed(()=>{const fields={code:'业务编号',kind:'业务�
    <div class="page-title"><h1>{{title}}</h1></div>
    <div class="heading-actions" role="group" aria-label="页面操作">
     <button v-if="canCreate" type="button" class="primary" @click="create"><AppIcon name="plus" :size="16"/>{{page==='configs'?'发布新版本':page==='reports'?(role==='PUBLIC'?'提交举报':'录入线索'):'新建'}}</button>
-    <button v-if="page==='banks'&&role!=='PUBLIC'" type="button" class="business-action" :disabled="integrityPanel?.busy" @click="integrityPanel?.run()">{{integrityPanel?.busy?'正在对账…':'资金对账'}}</button>
-    <button v-if="page==='logs'&&isAdmin" type="button" class="business-action" :disabled="auditPanel?.busy" @click="auditPanel?.run()">{{auditPanel?.busy?'正在校验…':'校验日志'}}</button>
+    <button v-if="page==='banks'&&role!=='PUBLIC'" type="button" class="business-action" @click="inspection='funds'">资金对账</button>
+    <button v-if="page==='logs'&&isAdmin" type="button" class="business-action" @click="inspection='audit'">校验日志</button>
     <template v-if="page==='applications'&&role==='PUBLIC'"><button type="button" class="business-action" @click="applicationForm('返还')">资金返还</button><button type="button" class="business-action" @click="applicationForm('申诉')">误冻结申诉</button></template>
     <button type="button" class="page-refresh" aria-label="刷新当前页面" :disabled="busy" @click="refresh"><AppIcon name="refresh" :size="16"/><span>刷新</span></button>
    </div>
@@ -267,11 +268,12 @@ const detailPairs=computed(()=>{const fields={code:'业务编号',kind:'业务�
     <section v-else-if="page==='articles'" class="panel knowledge-panel"><KnowledgeList :articles="rows" :manage="isCenter" @select="openDetail('articles',$event)"/></section>
     <section v-else-if="page==='configs'" class="panel"><div class="panel-heading"><h3>规则版本历史</h3></div><article v-for="c in rows" :key="c.id" class="config-version"><header><h3>版本 {{c.id}}</h3><div class="config-meta"><time :datetime="c.created_at">{{fmt(c.created_at)}}</time><span>{{businessName(c.display_name)}}</span></div></header><div class="weight-row"><div v-for="(w,i) in c.data.weights" :key="i"><strong>{{w}}<small>%</small></strong><span>{{['金额','时段','异地','黑名单','异常行为'][i]}}</span></div></div><dl class="config-details"><div><dt>高风险阈值</dt><dd>≥ {{c.data.high}} 分</dd></div><div><dt>中风险阈值</dt><dd>≥ {{c.data.medium}} 分</dd></div><div><dt>线索归并时限</dt><dd>{{c.data.mergeHours}} 小时</dd></div><div><dt>冻结时限</dt><dd>{{c.data.freezeHours}} 小时</dd></div><div><dt>最多延期</dt><dd>{{c.data.maxExtensions}} 次</dd></div><div><dt>机构响应时限</dt><dd>{{c.data.timeoutMinutes}} 分钟</dd></div></dl></article></section>
    <template v-else-if="page==='applications'"><section class="panel"><DataTable :key="page" :server="pagination" :resource="page" @query="listChanged" :columns="columns" :rows="rows" @select="select"/></section></template>
-   <template v-else-if="page==='notices'"><section class="panel"><DataTable :server="pagination" :resource="page" @query="listChanged" :columns="columns" :rows="rows" @select="select"/></section><section class="panel summary-breakdown"><div class="panel-heading"><h3>上门任务督办</h3></div><DataTable :rows="visitAttention" :columns="[{key:'code',label:'任务编号'},{key:'community_name',label:'社区'},{key:'assignee',label:'执行人'},{key:'attention',label:'督办原因',badge:true},{key:'due_at',label:'要求完成时间'}]" @select="openDetail('visits',$event)"/></section></template>
-    <section v-else-if="columns.length" class="panel"><IntegrityPanel v-if="page==='banks'&&role!=='PUBLIC'" ref="integrityPanel" key="funds" kind="funds" :show-header="false"/><IntegrityPanel v-if="page==='logs'&&isAdmin" ref="auditPanel" key="audit" kind="audit" :show-header="false"/><DataTable :key="page" :server="pagination" :resource="page" @query="listChanged" :columns="columns" :rows="rows" :selectable="page==='banks'||page==='people'?isAdmin:page!=='logs'" :action-label="page==='users'?'管理账号':page==='people'?'更正资料':'查看详情'" @select="select"/></section>
+   <template v-else-if="page==='notices'"><section class="panel"><DataTable :server="pagination" :resource="page" @query="listChanged" :columns="columns" :rows="rows" @select="select"/></section><section class="panel summary-breakdown"><div class="panel-heading"><h3>上门任务督办</h3></div><DataTable resource="notices" :rows="visitAttention" :columns="[{key:'code',label:'任务编号'},{key:'community_name',label:'社区'},{key:'assignee',label:'执行人'},{key:'attention',label:'督办原因',badge:true},{key:'due_at',label:'要求完成时间'}]" @select="openDetail('visits',$event)"/></section></template>
+    <section v-else-if="columns.length" class="panel"><DataTable :key="page" :server="pagination" :resource="page" @query="listChanged" :columns="columns" :rows="rows" :selectable="page==='banks'||page==='people'?isAdmin:page!=='logs'" :action-label="page==='users'?'管理账号':page==='people'?'更正资料':'查看详情'" @select="select"/></section>
   </main></div>
  </div>
 
+  <IntegrityDialog v-if="inspection" :key="inspection" :kind="inspection" @close="inspection=null"/>
   <div v-if="detail" class="drawer-backdrop" :inert="!!(modal||receiptResult||loginOpen)||undefined" @click.self="closeDetail"><section class="detail-drawer" :class="{'article-drawer':detail.type==='articles'}" role="dialog" aria-modal="true" :aria-label="detail.type==='articles'?'文章详情':'业务详情'" tabindex="-1"><header class="drawer-header"><div><p class="eyebrow">{{({alerts:'研判详情',reports:'举报详情',commands:'指令详情',visits:'任务详情',applications:'申请详情',articles:'知识文章',campaigns:'宣防详情',notices:'督办详情',corrections:'更正详情',blacklist:'风险名单详情',banks:'账户详情'})[detail.type]}}</p><h2>{{d.title||d.code||(detail.type==='blacklist'?'风险名单':detail.type==='banks'?'资金账户':'办理记录')}}</h2><div v-if="detail.type==='articles'" class="article-reading-meta"><span class="article-category">{{articleCategory(d.category)}}</span><span v-if="d.updated_at" class="article-updated">更新于 <time :datetime="d.updated_at">{{fmt(d.updated_at)}}</time></span><span v-if="isCenter" class="badge" :class="statusTone(d.state)">{{d.state}}</span></div></div><button class="icon-button" aria-label="关闭详情" @click="closeDetail"><AppIcon name="close" :size="20"/></button></header><div class="drawer-body">
   <div v-if="error" class="error-box" role="alert">{{error}}</div>
   <p v-if="detail.loading" role="status">正在加载详情…</p><div v-if="!detail.loading" class="detail-actions">
